@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ar" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K-Ging Tournament - Valorant Bracket</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Noise Overlay -->
+  <div class="noise-overlay"></div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-bg"></div>
+    <div class="header-content">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <svg viewBox="0 0 40 40" fill="none">
+            <polygon points="20,2 38,12 38,28 20,38 2,28 2,12" fill="#ff4655" opacity="0.9"/>
+            <polygon points="20,8 32,15 32,25 20,32 8,25 8,15" fill="#0f1923"/>
+            <text x="20" y="23" text-anchor="middle" fill="#ff4655" font-size="14" font-weight="bold" font-family="Rajdhani">K</text>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <h1>K-Ging</h1>
+          <span class="logo-sub">TOURNAMENT BRACKET</span>
+        </div>
+      </div>
+      <nav class="nav-controls">
+        <button class="nav-btn" id="btnAdmin" onclick="openAdminPanel()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <span>إدارة</span>
+        </button>
+        <button class="nav-btn" onclick="shareTournament()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+          <span>مشاركة</span>
+        </button>
+        <button class="nav-btn" id="lockIndicator" onclick="toggleLock()" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          <span id="lockText">مقفل</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-container">
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-graphics">
+        <div class="hero-line line-1"></div>
+        <div class="hero-line line-2"></div>
+        <div class="hero-line line-3"></div>
+        <div class="hero-diamond"></div>
+        <div class="hero-valo-logo">
+          <svg viewBox="0 0 200 200" fill="none">
+            <polygon points="100,10 190,55 190,145 100,190 10,145 10,55" stroke="#ff4655" stroke-width="1.5" opacity="0.15" fill="none"/>
+            <polygon points="100,30 170,65 170,135 100,170 30,135 30,65" stroke="#ff4655" stroke-width="1" opacity="0.1" fill="none"/>
+            <text x="100" y="118" text-anchor="middle" fill="#ff4655" font-size="64" font-weight="700" font-family="Rajdhani" opacity="0.15">V</text>
+          </svg>
+        </div>
+        <div class="hero-accent top-left"></div>
+        <div class="hero-accent top-right"></div>
+        <div class="hero-accent bottom-left"></div>
+        <div class="hero-accent bottom-right"></div>
+      </div>
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge-dot"></span>
+          البطولة المباشرة
+        </div>
+        <div class="hero-valo-icon">
+          <svg viewBox="0 0 100 100" fill="none">
+            <polygon points="50,5 92,28 92,72 50,95 8,72 8,28" stroke="#ff4655" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+            <polygon points="50,18 78,32 78,68 50,82 22,68 22,32" stroke="#ff4655" stroke-width="1.5" stroke-linejoin="round" opacity="0.6" fill="none"/>
+            <polygon points="50,30 65,38 65,63 50,72 35,63 35,38" fill="#ff4655" opacity="0.15"/>
+            <text x="50" y="62" text-anchor="middle" fill="#ff4655" font-size="24" font-weight="700" font-family="Rajdhani">V</text>
+          </svg>
+        </div>
+        <h2 class="hero-title" id="tournamentTitle">K-Ging Valorant Championship</h2>
+        <p class="hero-subtitle" id="tournamentDesc">تنافس. انتصر. احكم.</p>
+        <div class="hero-stats">
+          <div class="stat">
+            <span class="stat-value" id="playerCount">0</span>
+            <span class="stat-label">لاعب</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat">
+            <span class="stat-value" id="matchCount">0</span>
+            <span class="stat-label" id="matchLabel">مباراة</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat">
+            <span class="stat-value" id="roundCount">0</span>
+            <span class="stat-label">دور</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Password Modal -->
+    <div class="modal-overlay" id="passwordModal">
+      <div class="modal-content password-modal">
+        <div class="password-lock-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ff4655" stroke-width="1.5">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+        </div>
+        <h3>لوحة التحكم محمية</h3>
+        <p class="password-hint">الرجاء إدخال كلمة السر للوصول</p>
+        <div class="password-input-group">
+          <input type="password" id="passwordInput" placeholder="كلمة السر" onkeydown="if(event.key==='Enter')checkPassword()">
+          <button class="btn-primary" onclick="checkPassword()">دخول</button>
+        </div>
+        <p class="password-error" id="passwordError"></p>
+      </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <section class="admin-panel" id="adminPanel">
+      <div class="panel-header">
+        <h3>لوحة التحكم</h3>
+        <div class="panel-header-actions">
+          <span class="panel-lock-badge" id="panelLockBadge">🔒 مقفل</span>
+          <button class="close-btn" onclick="closeAdmin()">&times;</button>
+        </div>
+      </div>
+      <div class="panel-tabs">
+        <button class="tab-btn active" data-tab="players" onclick="switchTab('players')">اللاعبون</button>
+        <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">الإعدادات</button>
+        <button class="tab-btn" data-tab="manage" onclick="switchTab('manage')">إدارة البطولة</button>
+      </div>
+
+      <!-- Players Tab -->
+      <div class="tab-content active" id="tab-players">
+        <form class="add-player-form" id="playerForm" onsubmit="addPlayer(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="playerName">اسم اللاعب</label>
+              <input type="text" id="playerName" placeholder="مثال: Viper_Pro" required>
+            </div>
+            <div class="form-group">
+              <label for="playerDiscord">معرف ديسكورد</label>
+              <input type="text" id="playerDiscord" placeholder="1366127846367432797">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="playerAvatar">رابط الصورة (Discord CDN)</label>
+              <input type="url" id="playerAvatar" placeholder="https://cdn.discordapp.com/avatars/...">
+            </div>
+          </div>
+          <button type="submit" class="btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            إضافة لاعب
+          </button>
+        </form>
+        <div class="players-list-header">
+          <span>قائمة اللاعبين (<span id="playersCount">0</span>)</span>
+          <button class="btn-danger-small" onclick="clearAllPlayers()">حذف الكل</button>
+        </div>
+        <div class="players-list" id="playersList"></div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="tab-content" id="tab-settings">
+        <div class="settings-form">
+          <div class="form-group">
+            <label for="tournamentName">اسم البطولة</label>
+            <input type="text" id="tournamentName" value="K-Ging Valorant Championship">
+          </div>
+          <div class="form-group">
+            <label for="tournamentDesc">وصف البطولة</label>
+            <input type="text" id="tournamentDesc" value="تنافس. انتصر. احكم.">
+          </div>
+          <div class="form-group">
+            <label for="tournamentType">نظام البطولة</label>
+            <select id="tournamentType">
+              <option value="single">إقصاء فردي</option>
+              <option value="double" disabled>إقصاء مزدوج (قريباً)</option>
+            </select>
+          </div>
+          <div class="form-divider"></div>
+          <div class="form-group">
+            <label for="adminPassword">كلمة سر لوحة التحكم</label>
+            <div class="password-change-group">
+              <input type="password" id="adminPassword" placeholder="••••••••">
+              <button class="btn-primary" onclick="changePassword()">تغيير</button>
+            </div>
+          </div>
+          <button class="btn-primary" onclick="saveSettings()">حفظ الإعدادات</button>
+        </div>
+      </div>
+
+      <!-- Manage Tab -->
+      <div class="tab-content" id="tab-manage">
+        <div class="manage-actions">
+          <button class="btn-primary" onclick="generateBracket()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            بدء البطولة
+          </button>
+          <button class="btn-secondary" onclick="resetBracket()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            إعادة تعيين
+          </button>
+        </div>
+        <div class="manage-info">
+          <p>تحكم في تأهيل اللاعبين من هنا. اختر الفائز في كل مباراة وسيتأهل تلقائياً للدور التالي.</p>
+        </div>
+        <div class="match-controls" id="matchControls">
+          <p style="color:var(--text-muted);font-size:13px">ابدأ البطولة أولاً لتظهر المباريات هنا</p>
+        </div>
+        <div class="share-section">
+          <h4>مشاركة البطولة</h4>
+          <div class="share-input-group">
+            <input type="text" id="shareUrl" readonly>
+            <button class="btn-primary" onclick="shareTournament()">نسخ الرابط</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bracket Section -->
+    <section class="bracket-section">
+      <div class="bracket-header">
+        <div class="bracket-title-area">
+          <h3>مخطط المواجهات</h3>
+          <span class="bracket-status" id="bracketStatus">بانتظار الإعداد</span>
+        </div>
+        <button class="btn-secondary" onclick="openAdminPanel()" id="quickAdminBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          إدارة اللاعبين
+        </button>
+      </div>
+      <div class="bracket-container" id="bracketContainer">
+        <div class="bracket-empty" id="bracketEmpty">
+          <div class="empty-icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#ff4655" stroke-width="1" opacity="0.4">
+              <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" stroke="#ff4655" fill="none"/>
+              <polygon points="12 6 17 9 17 15 12 18 7 15 7 9" stroke="#ff4655" fill="none" opacity="0.6"/>
+            </svg>
+          </div>
+          <p>لم يتم إعداد البطولة بعد</p>
+          <p class="empty-hint">أضف لاعبين من لوحة التحكم وابدأ البطولة</p>
+        </div>
+        <div class="bracket-grid" id="bracketGrid"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Champion Modal -->
+  <div class="modal-overlay" id="championModal">
+    <div class="modal-content champion-modal">
+      <div class="champion-glow"></div>
+      <div class="champion-particle p1"></div>
+      <div class="champion-particle p2"></div>
+      <div class="champion-particle p3"></div>
+      <div class="champion-particle p4"></div>
+      <div class="champion-crown">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="#ff4655">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+      </div>
+      <div class="champion-avatar" id="championAvatar">
+        <img src="" alt="">
+      </div>
+      <h2 class="champion-title">البطل</h2>
+      <h3 class="champion-name" id="championName">---</h3>
+      <div class="champion-trophy">
+        <svg viewBox="0 0 200 200" fill="none">
+          <path d="M100 20C100 20 130 60 170 60C170 60 170 100 130 130C130 130 110 150 100 180" stroke="#ff4655" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <path d="M100 20C100 20 70 60 30 60C30 60 30 100 70 130C70 130 90 150 100 180" stroke="#ff4655" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <path d="M80 170L120 170L115 185L85 185L80 170Z" fill="#ff4655"/>
+          <circle cx="100" cy="100" r="25" stroke="#ff4655" stroke-width="3" fill="none"/>
+          <text x="100" y="108" text-anchor="middle" fill="#ff4655" font-size="28" font-weight="bold" font-family="Rajdhani">1</text>
+        </svg>
+      </div>
+      <button class="btn-primary" onclick="closeChampionModal()">إغلاق</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <footer class="footer">
+    <span>K-Ging Community &copy; 2026</span>
+    <span class="footer-sep">|</span>
+    <span>Powered by Valorant</span>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
