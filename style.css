@@ -1,32 +1,34 @@
 /* ============================================
-   K-Ging Tournament Bracket - Valorant Theme v2
+   The Kareka | K-Gang Tournament Bracket
+   Purple / dark theme (matches K-Gang brand)
    ============================================ */
 
 :root {
-  --primary: #ff4655;
-  --primary-dark: #cc1020;
-  --primary-glow: rgba(255, 70, 85, 0.35);
-  --primary-subtle: rgba(255, 70, 85, 0.12);
+  --primary: #9184c9;
+  --primary-dark: #6e5fa8;
+  --primary-light: #b5abe0;
+  --primary-glow: rgba(145, 132, 201, 0.35);
+  --primary-subtle: rgba(145, 132, 201, 0.12);
 
-  --bg-deep: #0a0f16;
-  --bg-dark: #0f1923;
-  --bg-surface: #1a1d24;
-  --bg-surface-hover: #232830;
-  --bg-card: #1e2129;
-  --bg-card-hover: #262b35;
+  --bg-deep: #0d0c12;
+  --bg-dark: #141219;
+  --bg-surface: #1b1822;
+  --bg-surface-hover: #24202c;
+  --bg-card: #1f1c27;
+  --bg-card-hover: #292432;
 
-  --text-primary: #ece8e1;
-  --text-secondary: #8b978f;
-  --text-muted: #5c6770;
+  --text-primary: #ece8f5;
+  --text-secondary: #9891ac;
+  --text-muted: #605a75;
 
-  --border: #2d3339;
-  --border-light: #3a4149;
+  --border: #2c2836;
+  --border-light: #3c3648;
 
   --win-glow: rgba(255, 215, 0, 0.3);
   --win-bg: rgba(255, 215, 0, 0.08);
 
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 30px rgba(255, 70, 85, 0.15);
+  --shadow-glow: 0 0 30px rgba(145, 132, 201, 0.15);
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -88,7 +90,7 @@ body {
 .header-bg {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 70, 85, 0.05) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(145, 132, 201, 0.05) 50%, transparent 100%);
   pointer-events: none;
 }
 
@@ -107,7 +109,7 @@ body {
 .logo-icon svg {
   width: 40px;
   height: 40px;
-  filter: drop-shadow(0 0 8px rgba(255, 70, 85, 0.4));
+  filter: drop-shadow(0 0 8px rgba(145, 132, 201, 0.4));
 }
 
 .logo-text h1 {
@@ -154,7 +156,7 @@ body {
 .nav-btn:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 2px; }
 
 #lockIndicator {
-  border-color: rgba(255, 70, 85, 0.3);
+  border-color: rgba(145, 132, 201, 0.3);
   color: var(--primary);
 }
 
@@ -197,7 +199,7 @@ body {
   opacity: 0.04;
 }
 
-.hero-valo-logo {
+.hero-crest-logo {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -207,7 +209,7 @@ body {
   opacity: 0.6;
 }
 
-.hero-valo-logo svg { width: 100%; height: 100%; }
+.hero-crest-logo svg { width: 100%; height: 100%; }
 
 .hero-accent {
   position: absolute;
@@ -224,7 +226,7 @@ body {
 
 .hero-content { position: relative; z-index: 1; }
 
-.hero-valo-icon {
+.hero-crest-icon {
   width: 64px;
   height: 64px;
   margin: 0 auto 12px;
@@ -236,10 +238,10 @@ body {
   50% { transform: translateY(-6px); }
 }
 
-.hero-valo-icon svg {
+.hero-crest-icon svg {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 0 20px rgba(255, 70, 85, 0.3));
+  filter: drop-shadow(0 0 20px rgba(145, 132, 201, 0.3));
 }
 
 .hero-badge {
@@ -248,7 +250,7 @@ body {
   gap: 8px;
   padding: 4px 16px;
   background: var(--primary-subtle);
-  border: 1px solid rgba(255, 70, 85, 0.25);
+  border: 1px solid rgba(145, 132, 201, 0.25);
   border-radius: 20px;
   font-size: 12px;
   color: var(--primary);
@@ -546,7 +548,7 @@ body {
 }
 
 .btn-primary:hover {
-  background: #ff5e6b;
+  background: #a99dd6;
   box-shadow: 0 0 24px var(--primary-glow);
   transform: translateY(-1px);
 }
@@ -581,7 +583,7 @@ body {
 .btn-danger-small {
   padding: 4px 12px;
   background: transparent;
-  border: 1px solid rgba(255, 70, 85, 0.3);
+  border: 1px solid rgba(145, 132, 201, 0.3);
   border-radius: var(--radius-sm);
   color: var(--primary);
   font-size: 11px;
@@ -590,7 +592,7 @@ body {
   transition: var(--transition);
 }
 
-.btn-danger-small:hover { background: rgba(255, 70, 85, 0.15); }
+.btn-danger-small:hover { background: rgba(145, 132, 201, 0.15); }
 
 /* Players List */
 .add-player-form {
@@ -682,7 +684,7 @@ body {
 .manage-info {
   padding: 12px 16px;
   background: var(--primary-subtle);
-  border: 1px solid rgba(255, 70, 85, 0.2);
+  border: 1px solid rgba(145, 132, 201, 0.2);
   border-radius: var(--radius-sm);
   font-size: 13px;
   color: var(--text-secondary);
@@ -725,7 +727,7 @@ body {
 }
 
 .mc-match.mc-done {
-  border-color: rgba(255, 70, 85, 0.25);
+  border-color: rgba(145, 132, 201, 0.25);
 }
 
 .mc-players {
@@ -918,12 +920,12 @@ body {
 .bracket-status.active {
   background: var(--primary-subtle);
   color: var(--primary);
-  border: 1px solid rgba(255, 70, 85, 0.25);
+  border: 1px solid rgba(145, 132, 201, 0.25);
   animation: pulse-status 2s ease-in-out infinite;
 }
 
 @keyframes pulse-status {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 70, 85, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(145, 132, 201, 0); }
   50% { box-shadow: 0 0 12px 0 var(--primary-glow); }
 }
 
@@ -950,8 +952,8 @@ body {
   position: relative;
   min-height: 300px;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(255, 70, 85, 0.04) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 50%, rgba(255, 70, 85, 0.03) 0%, transparent 60%),
+    radial-gradient(ellipse at 20% 50%, rgba(145, 132, 201, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 50%, rgba(145, 132, 201, 0.03) 0%, transparent 60%),
     var(--bg-dark);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1061,8 +1063,8 @@ body {
 }
 
 .match-card.has-winner {
-  border-color: rgba(255, 70, 85, 0.35);
-  box-shadow: 0 0 20px rgba(255, 70, 85, 0.1);
+  border-color: rgba(145, 132, 201, 0.35);
+  box-shadow: 0 0 20px rgba(145, 132, 201, 0.1);
 }
 
 .match-card.has-winner .match-slot.winner {
@@ -1325,7 +1327,7 @@ body {
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.champion-modal { border-color: rgba(255, 70, 85, 0.3); }
+.champion-modal { border-color: rgba(145, 132, 201, 0.3); }
 
 .champion-glow {
   position: absolute;
@@ -1333,7 +1335,7 @@ body {
   left: -50%;
   width: 200%;
   height: 200%;
-  background: radial-gradient(circle, rgba(255, 70, 85, 0.08) 0%, transparent 60%);
+  background: radial-gradient(circle, rgba(145, 132, 201, 0.08) 0%, transparent 60%);
   animation: rotate-glow 8s linear infinite;
 }
 
@@ -1427,7 +1429,7 @@ body {
 }
 
 .toast.success { border-color: rgba(76, 175, 80, 0.4); }
-.toast.error { border-color: rgba(255, 70, 85, 0.4); }
+.toast.error { border-color: rgba(145, 132, 201, 0.4); }
 
 @keyframes slide-in {
   from { transform: translateX(100%); opacity: 0; }

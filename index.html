@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>K-Ging Tournament - Valorant Bracket</title>
+  <title>The Kareka | K-Gang Tournament Bracket</title>
+  <meta name="description" content="مخطط بطولات K-Gang التفاعلي — أضف اللاعبين، أنشئ القرعة، وتابع النتائج لحظة بلحظة.">
+  <meta name="theme-color" content="#0d0c12">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpolygon points='20,2 38,12 38,28 20,38 2,28 2,12' fill='%239184c9'/%3E%3Cpolygon points='20,8 32,15 32,25 20,32 8,25 8,15' fill='%230d0c12'/%3E%3Ctext x='20' y='23' text-anchor='middle' fill='%239184c9' font-size='14' font-weight='bold' font-family='sans-serif'%3EK%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -20,14 +23,14 @@
       <div class="logo-area">
         <div class="logo-icon">
           <svg viewBox="0 0 40 40" fill="none">
-            <polygon points="20,2 38,12 38,28 20,38 2,28 2,12" fill="#ff4655" opacity="0.9"/>
+            <polygon points="20,2 38,12 38,28 20,38 2,28 2,12" fill="#9184c9" opacity="0.9"/>
             <polygon points="20,8 32,15 32,25 20,32 8,25 8,15" fill="#0f1923"/>
-            <text x="20" y="23" text-anchor="middle" fill="#ff4655" font-size="14" font-weight="bold" font-family="Rajdhani">K</text>
+            <text x="20" y="23" text-anchor="middle" fill="#9184c9" font-size="14" font-weight="bold" font-family="Rajdhani">K</text>
           </svg>
         </div>
         <div class="logo-text">
-          <h1>K-Ging</h1>
-          <span class="logo-sub">TOURNAMENT BRACKET</span>
+          <h1>K-Gang</h1>
+          <span class="logo-sub">THE KAREKA TOURNAMENT</span>
         </div>
       </div>
       <nav class="nav-controls">
@@ -57,11 +60,11 @@
         <div class="hero-line line-2"></div>
         <div class="hero-line line-3"></div>
         <div class="hero-diamond"></div>
-        <div class="hero-valo-logo">
+        <div class="hero-crest-logo">
           <svg viewBox="0 0 200 200" fill="none">
-            <polygon points="100,10 190,55 190,145 100,190 10,145 10,55" stroke="#ff4655" stroke-width="1.5" opacity="0.15" fill="none"/>
-            <polygon points="100,30 170,65 170,135 100,170 30,135 30,65" stroke="#ff4655" stroke-width="1" opacity="0.1" fill="none"/>
-            <text x="100" y="118" text-anchor="middle" fill="#ff4655" font-size="64" font-weight="700" font-family="Rajdhani" opacity="0.15">V</text>
+            <polygon points="100,10 190,55 190,145 100,190 10,145 10,55" stroke="#9184c9" stroke-width="1.5" opacity="0.15" fill="none"/>
+            <polygon points="100,30 170,65 170,135 100,170 30,135 30,65" stroke="#9184c9" stroke-width="1" opacity="0.1" fill="none"/>
+            <text x="100" y="118" text-anchor="middle" fill="#9184c9" font-size="64" font-weight="700" font-family="Rajdhani" opacity="0.15">K</text>
           </svg>
         </div>
         <div class="hero-accent top-left"></div>
@@ -74,15 +77,15 @@
           <span class="badge-dot"></span>
           البطولة المباشرة
         </div>
-        <div class="hero-valo-icon">
+        <div class="hero-crest-icon">
           <svg viewBox="0 0 100 100" fill="none">
-            <polygon points="50,5 92,28 92,72 50,95 8,72 8,28" stroke="#ff4655" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
-            <polygon points="50,18 78,32 78,68 50,82 22,68 22,32" stroke="#ff4655" stroke-width="1.5" stroke-linejoin="round" opacity="0.6" fill="none"/>
-            <polygon points="50,30 65,38 65,63 50,72 35,63 35,38" fill="#ff4655" opacity="0.15"/>
-            <text x="50" y="62" text-anchor="middle" fill="#ff4655" font-size="24" font-weight="700" font-family="Rajdhani">V</text>
+            <polygon points="50,5 92,28 92,72 50,95 8,72 8,28" stroke="#9184c9" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+            <polygon points="50,18 78,32 78,68 50,82 22,68 22,32" stroke="#9184c9" stroke-width="1.5" stroke-linejoin="round" opacity="0.6" fill="none"/>
+            <polygon points="50,30 65,38 65,63 50,72 35,63 35,38" fill="#9184c9" opacity="0.15"/>
+            <text x="50" y="62" text-anchor="middle" fill="#9184c9" font-size="24" font-weight="700" font-family="Rajdhani">K</text>
           </svg>
         </div>
-        <h2 class="hero-title" id="tournamentTitle">K-Ging Valorant Championship</h2>
+        <h2 class="hero-title" id="tournamentTitle">K-Gang Valorant Championship</h2>
         <p class="hero-subtitle" id="tournamentDesc">تنافس. انتصر. احكم.</p>
         <div class="hero-stats">
           <div class="stat">
@@ -107,7 +110,7 @@
     <div class="modal-overlay" id="passwordModal">
       <div class="modal-content password-modal">
         <div class="password-lock-icon">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ff4655" stroke-width="1.5">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#9184c9" stroke-width="1.5">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
             <path d="M7 11V7a5 5 0 0110 0v4"/>
           </svg>
@@ -173,7 +176,7 @@
         <div class="settings-form">
           <div class="form-group">
             <label for="tournamentName">اسم البطولة</label>
-            <input type="text" id="tournamentName" value="K-Ging Valorant Championship">
+            <input type="text" id="tournamentName" value="K-Gang Valorant Championship">
           </div>
           <div class="form-group">
             <label for="tournamentDesc">وصف البطولة</label>
@@ -189,6 +192,9 @@
           <div class="form-divider"></div>
           <div class="form-group">
             <label for="adminPassword">كلمة سر لوحة التحكم</label>
+            <p class="password-default-warning" id="defaultPasswordWarning" style="display:none;color:#ff6b6b;font-size:12px;margin:0 0 8px">
+              ⚠️ لسه بتستخدم كلمة السر الافتراضية (admin123) — أي حد يعرفها هيقدر يدخل لوحة التحكم. غيّرها دلوقتي.
+            </p>
             <div class="password-change-group">
               <input type="password" id="adminPassword" placeholder="••••••••">
               <button class="btn-primary" onclick="changePassword()">تغيير</button>
@@ -241,9 +247,9 @@
       <div class="bracket-container" id="bracketContainer">
         <div class="bracket-empty" id="bracketEmpty">
           <div class="empty-icon">
-            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#ff4655" stroke-width="1" opacity="0.4">
-              <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" stroke="#ff4655" fill="none"/>
-              <polygon points="12 6 17 9 17 15 12 18 7 15 7 9" stroke="#ff4655" fill="none" opacity="0.6"/>
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#9184c9" stroke-width="1" opacity="0.4">
+              <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" stroke="#9184c9" fill="none"/>
+              <polygon points="12 6 17 9 17 15 12 18 7 15 7 9" stroke="#9184c9" fill="none" opacity="0.6"/>
             </svg>
           </div>
           <p>لم يتم إعداد البطولة بعد</p>
@@ -263,7 +269,7 @@
       <div class="champion-particle p3"></div>
       <div class="champion-particle p4"></div>
       <div class="champion-crown">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="#ff4655">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="#9184c9">
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
         </svg>
       </div>
@@ -274,11 +280,11 @@
       <h3 class="champion-name" id="championName">---</h3>
       <div class="champion-trophy">
         <svg viewBox="0 0 200 200" fill="none">
-          <path d="M100 20C100 20 130 60 170 60C170 60 170 100 130 130C130 130 110 150 100 180" stroke="#ff4655" stroke-width="4" stroke-linecap="round" fill="none"/>
-          <path d="M100 20C100 20 70 60 30 60C30 60 30 100 70 130C70 130 90 150 100 180" stroke="#ff4655" stroke-width="4" stroke-linecap="round" fill="none"/>
-          <path d="M80 170L120 170L115 185L85 185L80 170Z" fill="#ff4655"/>
-          <circle cx="100" cy="100" r="25" stroke="#ff4655" stroke-width="3" fill="none"/>
-          <text x="100" y="108" text-anchor="middle" fill="#ff4655" font-size="28" font-weight="bold" font-family="Rajdhani">1</text>
+          <path d="M100 20C100 20 130 60 170 60C170 60 170 100 130 130C130 130 110 150 100 180" stroke="#9184c9" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <path d="M100 20C100 20 70 60 30 60C30 60 30 100 70 130C70 130 90 150 100 180" stroke="#9184c9" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <path d="M80 170L120 170L115 185L85 185L80 170Z" fill="#9184c9"/>
+          <circle cx="100" cy="100" r="25" stroke="#9184c9" stroke-width="3" fill="none"/>
+          <text x="100" y="108" text-anchor="middle" fill="#9184c9" font-size="28" font-weight="bold" font-family="Rajdhani">1</text>
         </svg>
       </div>
       <button class="btn-primary" onclick="closeChampionModal()">إغلاق</button>
@@ -289,7 +295,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <footer class="footer">
-    <span>K-Ging Community &copy; 2026</span>
+    <span>K-Gang Community &copy; 2026</span>
     <span class="footer-sep">|</span>
     <span>Powered by Valorant</span>
   </footer>

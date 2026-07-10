@@ -1,9 +1,9 @@
 /* ============================================
-   K-Ging Tournament - Full Application Logic
+   The Kareka | K-Gang Tournament - App Logic
    ============================================ */
 
 window.addEventListener('error', function(e) {
-  console.error('[KG]', e.error || e.message);
+  console.error('[K-Gang]', e.error || e.message);
   try {
     const t = document.createElement('div');
     t.className = 'toast error';
@@ -21,41 +21,102 @@ const state = {
   tournamentPaused: false,
   nextPlayerId: 1,
   nextMatchId: 1,
-  adminPassword: 'admin123',
+  // Password is never stored in plain text — only its SHA-256 hash.
+  // This is the hash of the default password 'admin123'.
+  adminPasswordHash: '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9',
   isLocked: true,
   settings: {
-    name: 'K-Ging Valorant Championship',
+    name: 'K-Gang Valorant Championship',
     description: 'تنافس. انتصر. احكم.',
     type: 'single'
   }
 };
+
+const DEFAULT_PASSWORD_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
+
+// ========== Password Hashing ==========
+// NOTE: This still runs entirely client-side, so someone with devtools access
+// can flip state.isLocked directly and bypass the panel — that's an inherent
+// limit of a static, backend-less site, not something a hash fixes. What the
+// hash DOES fix is that the password itself is no longer sitting in
+// localStorage/state in plain, human-readable text.
+async function hashPassword(pw) {
+  const enc = new TextEncoder().encode(pw);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
 // ========== Storage ==========
 function saveState() {
-  try { localStorage.setItem('kging_v2', JSON.stringify(state)); } catch (e) {}
+  try { localStorage.setItem('kgang_bracket_v1', JSON.stringify(state)); } catch (e) {}
 }
 
 function loadState() {
   try {
-    const raw = localStorage.getItem('kging_v2');
-    if (raw) { Object.assign(state, JSON.parse(raw)); buildPlayerMap(); return true; }
+    const raw = localStorage.getItem('kgang_bracket_v1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migration: older saves kept the password in plain text as
+      // `adminPassword`. If we find that, hash it and drop the plain field.
+      if (parsed.adminPassword && !parsed.adminPasswordHash) {
+        hashPassword(parsed.adminPassword).then(h => {
+          state.adminPasswordHash = h;
+          delete state.adminPassword;
+          saveState();
+        });
+        delete parsed.adminPassword;
+      }
+      Object.assign(state, parsed);
+      buildPlayerMap();
+      return true;
+    }
   } catch (e) {}
   return false;
 }
 
 // ========== Helpers ==========
 function defaultAvatar(name) {
-  const c = (name || '?').charAt(0).toUpperCase();
-  return 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'128\' height=\'128\'%3E%3Crect fill=\'%231a1d24\' width=\'128\' height=\'128\'/%3E%3Ctext x=\'64\' y=\'80\' text-anchor=\'middle\' fill=\'%235c6770\' font-size=\'48\' font-weight=\'700\' font-family=\'Rajdhani\'%3E' + c + '%3C/text%3E%3C/svg%3E';
+  let c = (name || '?').trim().charAt(0).toUpperCase();
+  // Only allow a single safe letter/digit character into the generated SVG.
+  // (Prevents a crafted player name from breaking out of the data URI / markup it's embedded in.)
+  if (!c || !/^[A-Za-z0-9\u0600-\u06FF]$/.test(c)) c = '?';
+  return 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'128\' height=\'128\'%3E%3Crect fill=\'%231f1c27\' width=\'128\' height=\'128\'/%3E%3Ctext x=\'64\' y=\'80\' text-anchor=\'middle\' fill=\'%239184c9\' font-size=\'48\' font-weight=\'700\' font-family=\'Rajdhani\'%3E' + encodeURIComponent(c) + '%3C/text%3E%3C/svg%3E';
 }
 
 function escapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// Escapes a value for safe use inside an HTML attribute (quotes included).
+// escapeHtml() alone does NOT escape quote characters, so it is not safe
+// for attribute contexts like src="...".
+function escapeAttr(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Only allow http(s) URLs or our own generated data:image/svg+xml avatars.
+// Anything else (javascript:, a crafted string with quotes/onerror=, etc.)
+// falls back to a generated default avatar instead of being trusted.
+function sanitizeAvatarUrl(url, name) {
+  const fallback = defaultAvatar(name);
+  if (!url || typeof url !== 'string') return fallback;
+  const trimmed = url.trim();
+  if (/^data:image\/svg\+xml,/i.test(trimmed)) return trimmed;
+  try {
+    const u = new URL(trimmed, window.location.href);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return trimmed;
+  } catch (e) {}
+  return fallback;
 }
 
 let playerMap = null;
@@ -93,9 +154,13 @@ function toggleAdminPanel(open) {
   $('#adminPanel').classList.toggle('open', open);
 }
 
-function checkPassword() {
+async function checkPassword() {
   const pw = $('#passwordInput').value;
-  if (pw === state.adminPassword) {
+  const btn = $('#passwordModal .btn-primary');
+  if (btn) btn.disabled = true;
+  const hash = await hashPassword(pw);
+  if (btn) btn.disabled = false;
+  if (hash === state.adminPasswordHash) {
     state.isLocked = false;
     $('#passwordModal').classList.remove('open');
     toggleAdminPanel(true);
@@ -103,10 +168,22 @@ function checkPassword() {
     renderBracket(); // update slot cursors
     saveState();
     toast('تم فتح لوحة التحكم');
+    warnIfDefaultPassword();
   } else {
     $('#passwordError').textContent = '❌ كلمة السر خطأ';
     $('#passwordInput').value = '';
     $('#passwordInput').focus();
+  }
+}
+
+// Nags the admin (once per session) if the panel is still protected by the
+// factory-default password, since that's effectively no protection at all.
+let defaultPasswordWarned = false;
+function warnIfDefaultPassword() {
+  if (defaultPasswordWarned) return;
+  if (state.adminPasswordHash === DEFAULT_PASSWORD_HASH) {
+    defaultPasswordWarned = true;
+    toast('⚠️ لسه بتستخدم كلمة السر الافتراضية — غيّرها من تبويب الإعدادات', 'error');
   }
 }
 
@@ -123,12 +200,14 @@ function toggleLock() {
   }
 }
 
-function changePassword() {
+async function changePassword() {
   const input = $('#adminPassword');
   const pw = input.value.trim();
   if (!pw || pw.length < 4) { toast('كلمة السر يجب أن تكون 4 أحرف على الأقل', 'error'); return; }
-  state.adminPassword = pw;
+  state.adminPasswordHash = await hashPassword(pw);
   input.value = '';
+  defaultPasswordWarned = false;
+  updateDefaultPasswordWarning();
   saveState();
   toast('تم تغيير كلمة السر بنجاح');
 }
@@ -166,11 +245,12 @@ function addPlayer(e) {
   e.preventDefault();
   const name = $('#playerName').value.trim();
   if (!name) { toast('الرجاء إدخال اسم اللاعب', 'error'); return; }
+  const avatarInput = $('#playerAvatar').value.trim();
   state.players.push({
     id: state.nextPlayerId++,
     name,
     discordId: $('#playerDiscord').value.trim(),
-    avatarUrl: $('#playerAvatar').value.trim() || defaultAvatar(name),
+    avatarUrl: avatarInput ? sanitizeAvatarUrl(avatarInput, name) : defaultAvatar(name),
     seed: state.players.length + 1
   });
   buildPlayerMap();
@@ -195,8 +275,18 @@ function editPlayer(id) {
   const n = prompt('اسم اللاعب:', p.name);
   if (!n || !n.trim()) return;
   p.name = n.trim();
-  p.discordId = prompt('معرف ديسكورد:', p.discordId || '') || '';
-  p.avatarUrl = prompt('رابط الصورة:', p.avatarUrl || '') || defaultAvatar(p.name);
+
+  // Cancel returns null from prompt(); previously that was coerced to '' and
+  // silently wiped out an existing Discord ID / avatar. Only overwrite when
+  // the user actually confirmed the dialog (didn't press Cancel).
+  const discordInput = prompt('معرف ديسكورد:', p.discordId || '');
+  if (discordInput !== null) p.discordId = discordInput.trim();
+
+  const avatarInput = prompt('رابط الصورة:', p.avatarUrl || '');
+  if (avatarInput !== null) {
+    p.avatarUrl = avatarInput.trim() ? sanitizeAvatarUrl(avatarInput.trim(), p.name) : defaultAvatar(p.name);
+  }
+
   saveState(); renderPlayers(); toast('تم تحديث ' + p.name);
 }
 
@@ -219,7 +309,7 @@ function renderPlayers() {
   }
   list.innerHTML = state.players.map(p =>
     '<div class="player-card">' +
-      '<img class="player-avatar" src="' + (p.avatarUrl || defaultAvatar(p.name)) + '" alt="' + escapeHtml(p.name) + '" loading="lazy" onerror="this.src=\'' + defaultAvatar(p.name) + '\'">' +
+      '<img class="player-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="' + escapeHtml(p.name) + '" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'">' +
       '<div class="player-info">' +
         '<div class="player-name">' + escapeHtml(p.name) + '</div>' +
         '<div class="player-discord">' + (p.discordId ? 'ID: ' + escapeHtml(p.discordId) : '') + '</div>' +
@@ -233,6 +323,22 @@ function renderPlayers() {
 }
 
 // ========== Bracket ==========
+// Standard tournament seeding order (e.g. for size 8: [1,8,4,5,2,7,3,6]).
+// This is the classic recursive "avoid top seeds meeting early" bracket
+// layout used by real tournaments (NCAA-style), so seed 1 and seed 2 can
+// only meet in the final, seeds 1-4 can't meet before the semis, etc.
+function standardSeedOrder(size) {
+  if (size <= 1) return [1];
+  let order = [1, 2];
+  while (order.length < size) {
+    const total = order.length * 2 + 1;
+    const next = [];
+    order.forEach(s => { next.push(s); next.push(total - s); });
+    order = next;
+  }
+  return order;
+}
+
 function generateBracket() {
   if (state.players.length < 2) { toast('يجب إضافة لاعبين على الأقل', 'error'); return; }
   if (state.tournamentStarted) { toast('البطولة قيد التشغيل', 'error'); return; }
@@ -242,16 +348,10 @@ function generateBracket() {
   const sorted = [...state.players].sort((a, b) => a.seed - b.seed);
   const slots = new Array(size).fill(null);
 
-  for (let i = 0; i < sorted.length; i++) {
-    const seed = i + 1;
-    let pos;
-    if (size <= 4) { pos = seed - 1; }
-    else {
-      const half = size / 2;
-      pos = seed <= half ? seed * 2 - 2 : (seed - half) * 2 - 1;
-    }
-    slots[pos] = sorted[i];
-  }
+  const order = standardSeedOrder(size); // order[i] = seed number placed at slot i
+  order.forEach((seed, pos) => {
+    if (seed <= sorted.length) slots[pos] = sorted[seed - 1];
+  });
 
   state.matches = [];
   state.nextMatchId = 1;
@@ -398,7 +498,7 @@ function renderBracket() {
     const locked = state.isLocked ? ' locked' : '';
     return '<div class="match-slot' + (iw ? ' winner' : '') + locked + '" data-match="' + match.id + '" data-player="' + playerId + '">' +
       (p
-        ? '<img class="slot-avatar" src="' + (p.avatarUrl || defaultAvatar(p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + defaultAvatar(p.name) + '\'">'
+        ? '<img class="slot-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'">'
         : '') +
       '<div class="slot-info">' +
         '<span class="slot-name">' + (p ? escapeHtml(p.name) : '—') + (match.isBye ? ' <span class="bye-tag">BYE</span>' : '') + '</span>' +
@@ -520,6 +620,12 @@ function updateBracketStatus() {
 function switchTab(tab) {
   $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
+  if (tab === 'settings') updateDefaultPasswordWarning();
+}
+
+function updateDefaultPasswordWarning() {
+  const el = $('#defaultPasswordWarning');
+  if (el) el.style.display = (state.adminPasswordHash === DEFAULT_PASSWORD_HASH) ? 'block' : 'none';
 }
 
 function saveSettings() {
@@ -536,7 +642,7 @@ function showChampionModal(playerId) {
   const p = getPlayer(playerId);
   if (!p) return;
   const img = $('#championAvatar img');
-  img.src = p.avatarUrl || defaultAvatar(p.name);
+  img.src = sanitizeAvatarUrl(p.avatarUrl, p.name);
   img.onerror = function() { this.src = defaultAvatar(p.name); };
   $('#championName').textContent = p.name;
   $('#championModal').classList.add('open');
@@ -545,6 +651,11 @@ function showChampionModal(playerId) {
 function closeChampionModal() { $('#championModal').classList.remove('open'); }
 
 // ========== Share ==========
+// Practical limit for URLs: most browsers handle 8k+ but many chat apps,
+// old proxies, and some servers start truncating/rejecting well before
+// that — 1900 is a safe, commonly-cited threshold to warn under.
+const SHARE_URL_WARN_LENGTH = 1900;
+
 function shareTournament() {
   const data = {
     name: state.settings.name,
@@ -554,18 +665,39 @@ function shareTournament() {
   };
   const url = window.location.origin + window.location.pathname + '?b=' + encodeURIComponent(JSON.stringify(data));
 
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(url).then(() => toast('تم نسخ رابط المشاركة!'))
-      .catch(() => copyUrl(url));
-  } else { copyUrl(url); }
+  // Always populate the manual-copy box first, regardless of whether the
+  // clipboard API works — the user needs a fallback either way.
+  const inp = $('#shareUrl');
+  if (inp) inp.value = url;
+
+  copyUrl(url).then(ok => {
+    if (ok) toast('تم نسخ رابط المشاركة!');
+    else toast('تعذّر النسخ التلقائي — الرابط جاهز في الحقل، انسخه يدوياً', 'error');
+    warnIfShareUrlTooLong(url);
+  });
 }
 
-function copyUrl(url) {
-  const inp = $('#shareUrl');
-  inp.value = url;
-  inp.select();
-  document.execCommand('copy');
-  toast('تم نسخ رابط المشاركة!');
+// Returns a Promise<boolean> — true if the copy actually succeeded.
+async function copyUrl(url) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try { await navigator.clipboard.writeText(url); return true; } catch (e) { /* fall through */ }
+  }
+  try {
+    const inp = $('#shareUrl');
+    inp.value = url;
+    inp.select();
+    inp.setSelectionRange(0, url.length); // mobile Safari needs this
+    const ok = document.execCommand('copy');
+    return !!ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+function warnIfShareUrlTooLong(url) {
+  if (url.length > SHARE_URL_WARN_LENGTH) {
+    toast('⚠️ الرابط طويل جداً (' + url.length + ' حرف) — ممكن ينقطع في بعض المتصفحات أو تطبيقات الشات مع كتر اللاعبين', 'error');
+  }
 }
 
 function loadShared() {
@@ -605,6 +737,7 @@ document.addEventListener('DOMContentLoaded', function() {
   $('#tournamentName').value = state.settings.name;
   $('#tournamentDesc').value = state.settings.description;
   updateLockUI();
+  updateDefaultPasswordWarning();
   renderPlayers();
   renderBracket();
   renderMatchControls();
