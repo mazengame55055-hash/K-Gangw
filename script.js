@@ -49,12 +49,76 @@ async function hashPassword(pw) {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
+// ========== Firebase Setup ==========
+// 1) Create a free project at https://console.firebase.google.com
+// 2) Enable "Firestore Database" (start in test mode, or use the security
+//    rules from the setup guide you were given).
+// 3) Project settings → your apps → Web app → copy the config object below.
+// 4) Paste your own values here. Until you do, the app falls back to
+//    localStorage (old behaviour: changes only visible on this device).
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+// Fields that are shared with everyone via the cloud. Deliberately excludes
+// `isLocked`, which stays per-device/per-session (so unlocking the admin
+// panel on one phone doesn't unlock it for every visitor).
+const SYNCED_FIELDS = ['players', 'matches', 'tournamentStarted', 'tournamentFinished', 'tournamentPaused', 'nextPlayerId', 'nextMatchId', 'adminPasswordHash', 'settings'];
+
+let cloudEnabled = false;
+let tournamentDocRef = null;
+let isApplyingRemoteUpdate = false;
+let saveDebounceTimer = null;
+
+function initFirebase() {
+  if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
+    console.warn('[K-Gang] Firebase not configured yet — falling back to localStorage only. See comment above firebaseConfig.');
+    return false;
+  }
+  try {
+    firebase.initializeApp(firebaseConfig);
+    tournamentDocRef = firebase.firestore().collection('tournaments').doc('kgang-main');
+    return true;
+  } catch (e) {
+    console.error('[K-Gang] Firebase init failed', e);
+    return false;
+  }
+}
+
+function getSyncPayload() {
+  const payload = {};
+  SYNCED_FIELDS.forEach(k => { payload[k] = state[k]; });
+  return payload;
+}
+
 // ========== Storage ==========
+// Always caches locally (instant reads on next visit / offline fallback).
+// Also pushes to Firestore (debounced) when the cloud is configured, so
+// every visitor's browser converges on the same shared state.
 function saveState() {
+  try { localStorage.setItem('kgang_bracket_v1', JSON.stringify(state)); } catch (e) {}
+  if (!cloudEnabled || isApplyingRemoteUpdate) return;
+  clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(() => {
+    tournamentDocRef.set(getSyncPayload()).catch(err => {
+      console.error('[K-Gang] cloud save failed', err);
+      toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
+    });
+  }, 400);
+}
+
+// Saves a purely local/per-device change (e.g. lock state) without pushing
+// anything to the cloud.
+function saveLocalOnly() {
   try { localStorage.setItem('kgang_bracket_v1', JSON.stringify(state)); } catch (e) {}
 }
 
-function loadState() {
+function loadLocalCache() {
   try {
     const raw = localStorage.getItem('kgang_bracket_v1');
     if (raw) {
@@ -75,6 +139,30 @@ function loadState() {
     }
   } catch (e) {}
   return false;
+}
+
+// Subscribes to the shared cloud document. Fires on every change made by
+// ANY visitor (including this one), so all open tabs/devices stay in sync
+// in real time without needing a refresh.
+function subscribeToTournament() {
+  tournamentDocRef.onSnapshot(snap => {
+    if (snap.exists) {
+      isApplyingRemoteUpdate = true;
+      const data = snap.data();
+      SYNCED_FIELDS.forEach(k => { if (data[k] !== undefined) state[k] = data[k]; });
+      buildPlayerMap();
+      saveLocalOnly();
+      renderAll();
+      isApplyingRemoteUpdate = false;
+    } else {
+      // No shared doc yet — this is the very first run. Push whatever we
+      // currently have (defaults, or an imported share-link) to create it.
+      tournamentDocRef.set(getSyncPayload()).catch(e => console.error('[K-Gang] initial cloud write failed', e));
+    }
+  }, err => {
+    console.error('[K-Gang] cloud listen failed', err);
+    toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات Firebase أعلى script.js', 'error');
+  });
 }
 
 // ========== Helpers ==========
@@ -166,7 +254,7 @@ async function checkPassword() {
     toggleAdminPanel(true);
     updateLockUI();
     renderBracket(); // update slot cursors
-    saveState();
+    saveLocalOnly();
     toast('تم فتح لوحة التحكم');
     warnIfDefaultPassword();
   } else {
@@ -193,7 +281,7 @@ function toggleLock() {
     toggleAdminPanel(false);
     updateLockUI();
     renderBracket(); // update slot cursors
-    saveState();
+    saveLocalOnly();
     toast('تم قفل لوحة التحكم');
   } else {
     openAdminPanel();
@@ -729,9 +817,7 @@ function loadShared() {
 }
 
 // ========== Init ==========
-document.addEventListener('DOMContentLoaded', function() {
-  if (!loadState()) loadShared();
-  state.isLocked = true; // Always start locked for security
+function renderAll() {
   $('#tournamentTitle').textContent = state.settings.name;
   $('#tournamentDesc').textContent = state.settings.description;
   $('#tournamentName').value = state.settings.name;
@@ -743,4 +829,18 @@ document.addEventListener('DOMContentLoaded', function() {
   renderMatchControls();
   updateStats();
   updateBracketStatus();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadLocalCache();   // instant paint from last-seen cache (works offline too)
+  loadShared();        // legacy: import from an old-style ?b= share link, if present
+  state.isLocked = true; // Always start locked for security
+  renderAll();
+
+  cloudEnabled = initFirebase();
+  if (cloudEnabled) {
+    subscribeToTournament(); // real-time sync — every visitor sees every change
+  } else {
+    toast('⚠️ التخزين السحابي مش متظبط لسه — التعديلات هتفضل محلية بس على الجهاز ده. راجع الإعدادات أعلى script.js', 'error');
+  }
 });
