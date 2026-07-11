@@ -57,12 +57,12 @@ const $$ = (s) => document.querySelectorAll(s);
 // 4) Paste your own values here. Until you do, the app falls back to
 //    localStorage (old behaviour: changes only visible on this device).
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCiqxBcA2V5OMeRuWXOo4qQRkeQ_kWFL5s",
+  authDomain: "kgang-bracket.firebaseapp.com",
+  projectId: "kgang-bracket",
+  storageBucket: "kgang-bracket.firebasestorage.app",
+  messagingSenderId: "636100538077",
+  appId: "1:636100538077:web:a2d46aee7bd34dd723b534"
 };
 
 // Fields that are shared with everyone via the cloud. Deliberately excludes
