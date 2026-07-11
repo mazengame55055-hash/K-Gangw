@@ -59,8 +59,8 @@ const $$ = (s) => document.querySelectorAll(s);
 //    read/write/delete every bin in your whole account, not just this one.
 // 4) Paste your Bin ID and key below. Until you do, the app falls back to
 //    localStorage (old behaviour: changes only visible on this device).
-const JSONBIN_BIN_ID = 'PASTE_YOUR_BIN_ID_HERE';
-const JSONBIN_KEY = 'PASTE_YOUR_ACCESS_OR_MASTER_KEY_HERE';
+const JSONBIN_BIN_ID = '6a51bd72f5f4af5e297f8ab7';
+const JSONBIN_KEY = '$2a$10$q7mO1ej/e57QkPcvv0PChOEpeLz5Achhnrkfb.DwYNek8Ka55PKUO';
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b/' + JSONBIN_BIN_ID;
 
 // Fields that are shared with everyone via the cloud. Deliberately excludes
@@ -137,7 +137,7 @@ async function pushToCloud() {
   try {
     const res = await fetch(JSONBIN_BASE, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      headers: { 'Content-Type': 'application/json', 'X-Access-Key': JSONBIN_KEY },
       body: JSON.stringify(getSyncPayload())
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -155,7 +155,7 @@ async function pushToCloud() {
 async function pullFromCloud() {
   try {
     const res = await fetch(JSONBIN_BASE + '/latest', {
-      headers: { 'X-Master-Key': JSONBIN_KEY }
+      headers: { 'X-Access-Key': JSONBIN_KEY }
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
