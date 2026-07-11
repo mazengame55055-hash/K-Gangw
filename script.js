@@ -3,6 +3,11 @@
    ============================================ */
 
 window.addEventListener('error', function(e) {
+  // Only surface errors that actually come from this file. Without this
+  // check, errors injected by browser extensions or third-party scripts
+  // some free hosts add to every page (ads, analytics) get caught here
+  // too and shown to the user as if they were bugs in K-Gang itself.
+  if (!e.filename || e.filename.indexOf('script.js') === -1) return;
   console.error('[K-Gang]', e.error || e.message);
   try {
     const t = document.createElement('div');
