@@ -142,6 +142,7 @@
         <button class="tab-btn active" data-tab="players" onclick="switchTab('players')">اللاعبون</button>
         <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">الإعدادات</button>
         <button class="tab-btn" data-tab="theme" onclick="switchTab('theme')">المظهر</button>
+        <button class="tab-btn" data-tab="effects" onclick="switchTab('effects')">المؤثرات</button>
         <button class="tab-btn" data-tab="manage" onclick="switchTab('manage')">إدارة البطولة</button>
       </div>
 
@@ -307,6 +308,92 @@
         </button>
       </div>
 
+      <!-- Effects (Animations) Tab -->
+      <div class="tab-content" id="tab-effects">
+
+        <div class="theme-section">
+          <div class="theme-section-title">دخول البطاقات في المخطط</div>
+          <p class="theme-section-desc">شكل ظهور بطاقات المباريات في مخطط المواجهات.</p>
+          <div class="form-group">
+            <select id="entranceSelect" onchange="updateBracketEntrance(this.value)">
+              <option value="fade">تلاشي (افتراضي)</option>
+              <option value="slide">انزلاق جانبي</option>
+              <option value="flip">قلب 3D</option>
+              <option value="zoom">تكبير</option>
+              <option value="none">بدون حركة</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="theme-section">
+          <div class="theme-section-title">تأثيرات مستقلة</div>
+          <p class="theme-section-desc">فعّل أو أوقف كل تأثير لوحده.</p>
+
+          <label class="switch-row">
+            <span class="switch-row-text">
+              <span class="switch-row-title">تأثير القلب 360° عند إعلان الفائز</span>
+              <span class="switch-row-sub">البطاقة بتعمل دورة كاملة 3D لحظة تحديد الفايز، وكمان عند ظهور البطل النهائي</span>
+            </span>
+            <span class="switch">
+              <input type="checkbox" id="toggleWinnerFlip" onchange="updateAnimToggle('winnerFlip', this.checked)">
+              <span class="switch-slider"></span>
+            </span>
+          </label>
+
+          <label class="switch-row">
+            <span class="switch-row-text">
+              <span class="switch-row-title">تدوير الشعار</span>
+              <span class="switch-row-sub">شعار K-Gang في الهيدر والهيرو بيلف 360° باستمرار</span>
+            </span>
+            <span class="switch">
+              <input type="checkbox" id="toggleLogoSpin" onchange="updateAnimToggle('logoSpin', this.checked)">
+              <span class="switch-slider"></span>
+            </span>
+          </label>
+
+          <label class="switch-row">
+            <span class="switch-row-text">
+              <span class="switch-row-title">حركة الخلفية</span>
+              <span class="switch-row-sub">توهج خفيف بيتحرك ببطء فوق خلفية الموقع</span>
+            </span>
+            <span class="switch">
+              <input type="checkbox" id="toggleBgMotion" onchange="updateAnimToggle('bgMotion', this.checked)">
+              <span class="switch-slider"></span>
+            </span>
+          </label>
+
+          <label class="switch-row">
+            <span class="switch-row-text">
+              <span class="switch-row-title">إمالة الكروت عند المرور</span>
+              <span class="switch-row-sub">كروت المباريات واللاعبين بتميل بمنظور 3D لما الماوس يمر عليها</span>
+            </span>
+            <span class="switch">
+              <input type="checkbox" id="toggleCardTilt" onchange="updateAnimToggle('cardTilt', this.checked)">
+              <span class="switch-slider"></span>
+            </span>
+          </label>
+        </div>
+
+        <div class="theme-section">
+          <div class="theme-section-title">معاينة تأثير الفوز</div>
+          <p class="theme-section-desc">جرّب شكل تأثير القلب 360° من غير ما تلعب مباراة فعلية.</p>
+          <div class="effects-preview-wrap">
+            <div class="match-card has-winner">
+              <div class="match-slot winner" id="effectsPreviewCard">
+                <div class="slot-info"><span class="slot-name">Player_One</span></div>
+              </div>
+              <div class="match-slot empty"><span class="slot-name">—</span></div>
+            </div>
+            <button type="button" class="btn-secondary" onclick="previewWinnerFlip()">تجربة الآن</button>
+          </div>
+        </div>
+
+        <button class="btn-secondary theme-reset-btn" onclick="resetAnimations()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          استعادة المؤثرات الافتراضية
+        </button>
+      </div>
+
       <!-- Manage Tab -->
       <div class="tab-content" id="tab-manage">
         <div class="manage-actions">
@@ -342,10 +429,20 @@
           <h3>مخطط المواجهات</h3>
           <span class="bracket-status" id="bracketStatus">بانتظار الإعداد</span>
         </div>
-        <button class="btn-secondary" onclick="openAdminPanel()" id="quickAdminBtn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-          إدارة اللاعبين
-        </button>
+        <div class="bracket-header-actions">
+          <button class="btn-secondary" onclick="exportBracketAsImage()" id="exportImageBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <span id="exportImageBtnText">تصدير كصورة</span>
+          </button>
+          <button class="btn-secondary" onclick="exportBracketAsPDF()" id="exportPdfBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+            <span id="exportPdfBtnText">تصدير PDF</span>
+          </button>
+          <button class="btn-secondary" onclick="openAdminPanel()" id="quickAdminBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            إدارة اللاعبين
+          </button>
+        </div>
       </div>
       <div class="bracket-container" id="bracketContainer">
         <div class="bracket-empty" id="bracketEmpty">

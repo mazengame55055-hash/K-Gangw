@@ -41,11 +41,22 @@ const state = {
     preset: 'kgang',
     colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' },
     font: 'rajdhani_inter',
-    background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 }
+    background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 },
+    // Animation / motion settings — admin-configurable from the "المؤثرات" tab
+    // and synced to every visitor like the rest of `theme`.
+    animations: {
+      bracketEntrance: 'fade', // how match cards animate in: fade | slide | flip | zoom | none
+      winnerFlip: true,        // 3D 360° flip on the winning slot when a result is set
+      logoSpin: false,         // continuous 360° rotation on the crest/logo icons
+      bgMotion: true,          // slow drifting light overlay on the site background
+      cardTilt: true           // subtle 3D tilt on match/player cards on hover
+    }
   }
 };
 
 const DEFAULT_PASSWORD_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
+
+const DEFAULT_ANIMATIONS = { bracketEntrance: 'fade', winnerFlip: true, logoSpin: false, bgMotion: true, cardTilt: true };
 
 // ========== Password Hashing ==========
 // NOTE: This still runs entirely client-side, so someone with devtools access
@@ -139,6 +150,7 @@ function loadLocalCache() {
         delete parsed.adminPassword;
       }
       Object.assign(state, parsed);
+      ensureAnimationsDefaults();
       buildPlayerMap();
       return true;
     }
@@ -178,6 +190,7 @@ async function pullFromCloud() {
     isApplyingRemoteUpdate = true;
     const record = data.record || {};
     SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
+    ensureAnimationsDefaults();
     buildPlayerMap();
     saveLocalOnly();
     renderAll();
@@ -238,6 +251,12 @@ function sanitizeAvatarUrl(url, name) {
   } catch (e) {}
   return fallback;
 }
+
+// Tracks the single most-recent "a winner was just picked" event, so the
+// next renderBracket() call can play the 360° flip once on exactly that
+// slot instead of re-playing it on every already-decided match whenever the
+// bracket re-renders (tab switch, cloud sync, etc).
+let pendingWinnerAnim = null;
 
 let playerMap = null;
 function buildPlayerMap() {
@@ -344,7 +363,12 @@ function applyThemeFont(fontId) {
     link.rel = 'stylesheet';
     document.head.appendChild(link);
   }
-  link.href = 'https://fonts.googleapis.com/css2?' + f.google + '&display=swap';
+  // renderAll() (and therefore applyThemeFont) runs on every cloud sync, not
+  // just when someone actually changes the font. Re-assigning the same href
+  // still makes the browser treat it as a new stylesheet (reload + FOUC-ish
+  // flash), so skip the write entirely when nothing changed.
+  const newHref = 'https://fonts.googleapis.com/css2?' + f.google + '&display=swap';
+  if (link.href !== newHref) link.href = newHref;
   const root = document.documentElement.style;
   root.setProperty('--font-display', "'" + f.display + "', sans-serif");
   root.setProperty('--font-body', "'" + f.body + "', sans-serif");
@@ -400,6 +424,74 @@ function applyThemeFull() {
   applyThemeColors(state.theme.colors);
   applyThemeFont(state.theme.font);
   applyThemeBackground(state.theme.background);
+  applyAnimations(state.theme.animations);
+}
+
+// Backfills `theme.animations` for states saved/synced before this feature
+// existed, so older caches / cloud records don't crash on missing keys.
+function ensureAnimationsDefaults() {
+  if (!state.theme) return;
+  state.theme.animations = Object.assign({}, DEFAULT_ANIMATIONS, state.theme.animations || {});
+}
+
+// ========== Animation Engine ==========
+// Applies the current animation settings as classes/attributes so CSS can
+// react to them. Kept as classes (not inline styles) so all the actual
+// keyframes/timings stay declarative and easy to tune in style.css.
+function applyAnimations(anim) {
+  anim = anim || DEFAULT_ANIMATIONS;
+  document.body.classList.toggle('anim-logo-spin', !!anim.logoSpin);
+  document.body.classList.toggle('anim-card-tilt', !!anim.cardTilt);
+  document.body.classList.toggle('anim-winner-flip', !!anim.winnerFlip);
+  const bgLayer = $('#siteBgLayer');
+  if (bgLayer) bgLayer.classList.toggle('bg-motion-on', !!anim.bgMotion);
+  const grid = $('#bracketGrid');
+  if (grid) grid.setAttribute('data-entrance', anim.bracketEntrance || 'fade');
+}
+
+// ----- Admin panel: Effects (animations) tab UI -----
+function renderEffectsTab() {
+  const anim = state.theme.animations;
+  if (!anim) return;
+  const entranceSelect = $('#entranceSelect');
+  if (entranceSelect) entranceSelect.value = anim.bracketEntrance;
+  const map = { toggleWinnerFlip: 'winnerFlip', toggleLogoSpin: 'logoSpin', toggleBgMotion: 'bgMotion', toggleCardTilt: 'cardTilt' };
+  Object.keys(map).forEach(elId => {
+    const el = $('#' + elId);
+    if (el) el.checked = !!anim[map[elId]];
+  });
+}
+
+function updateBracketEntrance(value) {
+  state.theme.animations.bracketEntrance = value;
+  applyAnimations(state.theme.animations);
+  saveState();
+}
+
+function updateAnimToggle(key, checked) {
+  state.theme.animations[key] = !!checked;
+  applyAnimations(state.theme.animations);
+  saveState();
+  const labels = { winnerFlip: 'تأثير القلب عند الفوز', logoSpin: 'تدوير الشعار', bgMotion: 'حركة الخلفية', cardTilt: 'إمالة الكروت' };
+  toast((checked ? '✅ تم تفعيل: ' : '⛔ تم إيقاف: ') + (labels[key] || key));
+}
+
+// Lets the admin see the winner-flip effect immediately on a demo card,
+// without needing to actually resolve a real match first.
+function previewWinnerFlip() {
+  const demo = $('#effectsPreviewCard');
+  if (!demo) return;
+  demo.classList.remove('winner-flip-anim');
+  void demo.offsetWidth; // force reflow so the animation can restart
+  demo.classList.add('winner-flip-anim');
+}
+
+function resetAnimations() {
+  state.theme.animations = Object.assign({}, DEFAULT_ANIMATIONS);
+  applyAnimations(state.theme.animations);
+  renderEffectsTab();
+  saveState();
+  toast('تم استعادة إعدادات المؤثرات الافتراضية');
 }
 
 // ----- Admin panel: Theme tab UI -----
@@ -561,10 +653,12 @@ function resetTheme() {
     preset: 'kgang',
     colors: Object.assign({}, THEME_PRESETS.kgang.colors),
     font: 'rajdhani_inter',
-    background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 }
+    background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 },
+    animations: Object.assign({}, DEFAULT_ANIMATIONS)
   };
   applyThemeFull();
   renderThemeTab();
+  renderEffectsTab();
   saveState();
   toast('تم استعادة المظهر الافتراضي');
 }
@@ -837,6 +931,9 @@ function setWinner(matchId, playerId) {
   }
 
   match.winnerId = playerId;
+  if (state.theme.animations && state.theme.animations.winnerFlip) {
+    pendingWinnerAnim = { matchId: match.id, playerId: playerId };
+  }
   autoAdvance(matchId, playerId);
 
   const finalRound = Math.max(...state.matches.map(m => m.round));
@@ -963,6 +1060,35 @@ function renderBracket() {
   });
 
   grid.innerHTML = html;
+  // Never let a purely cosmetic animation glitch break the functional
+  // updates that follow this call in setWinner()/renderAll() (stats, match
+  // controls, bracket status) — those must run regardless.
+  try {
+    applyAnimations(state.theme.animations);
+    playPendingWinnerFlip();
+  } catch (e) {
+    console.error('[K-Gang] animation step failed (non-fatal)', e);
+  }
+}
+
+// Plays the one-shot 360° flip on whichever slot just won, if any is queued.
+function playPendingWinnerFlip() {
+  if (!pendingWinnerAnim) return;
+  const { matchId, playerId } = pendingWinnerAnim;
+  pendingWinnerAnim = null;
+  const el = $('.match-slot[data-match="' + matchId + '"][data-player="' + playerId + '"]');
+  if (!el) return;
+  // .match-card normally clips its children (overflow: hidden) so rounded
+  // corners stay clean — but that would also clip the flip's rotation/scale
+  // mid-animation, so lift the clip only for the duration of the effect.
+  const card = el.closest('.match-card');
+  if (card) card.classList.add('flip-active');
+  el.classList.add('winner-flip-anim');
+  el.addEventListener('animationend', function handler() {
+    el.classList.remove('winner-flip-anim');
+    if (card) card.classList.remove('flip-active');
+    el.removeEventListener('animationend', handler);
+  });
 }
 
 // Click on bracket slot
@@ -1034,6 +1160,336 @@ function renderMatchControls() {
   el.innerHTML = html;
 }
 
+// ========== Export (Image / PDF) ==========
+// EARLIER APPROACH (removed): capture #bracketGrid with html2canvas, which
+// re-implements CSS layout/text rendering itself. That's what caused both
+// reported bugs — its Latin-only glyph renderer doesn't do Arabic letter
+// joining (broken/disconnected Arabic text), and it can silently produce a
+// blank/near-black canvas when it can't fully parse the page's CSS
+// (custom properties, animations mid-flight, external fonts inside its
+// clone) with no error thrown.
+//
+// NEW APPROACH: draw the bracket ourselves onto a plain <canvas> using the
+// Canvas 2D API (rectangles, circles, fillText). fillText is rendered by
+// the BROWSER's own text engine — the exact same one that draws Arabic
+// correctly everywhere else on this page — so Arabic shaping/joining just
+// works, and since we control every pixel drawn, there's no "the library
+// failed to understand the CSS" failure mode left. html2canvas is no
+// longer used at all. jsPDF is still used, but only to wrap the image we
+// already drew (not to render any text itself).
+let pdfLibPromise = null;
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-export-lib="' + src + '"]');
+    if (existing) { existing.addEventListener('load', resolve); if (existing.dataset.loaded) resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src;
+    s.dataset.exportLib = src;
+    s.onload = () => { s.dataset.loaded = '1'; resolve(); };
+    s.onerror = () => reject(new Error('فشل تحميل مكتبة التصدير'));
+    document.head.appendChild(s);
+  });
+}
+function ensurePdfLibLoaded() {
+  if (pdfLibPromise) return pdfLibPromise;
+  pdfLibPromise = (window.jspdf && window.jspdf.jsPDF)
+    ? Promise.resolve()
+    : loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  pdfLibPromise = pdfLibPromise.catch(err => { pdfLibPromise = null; throw err; });
+  return pdfLibPromise;
+}
+
+function exportFileBaseName() {
+  return (state.settings.name || 'K-Gang-Bracket').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_') || 'bracket';
+}
+
+function describeExportError(e) {
+  if (e && e.message === 'NO_DATA') return 'لازم تبدأ البطولة الأول عشان تقدر تصدّر الجدول';
+  return '⚠️ فشل التصدير — تأكد من اتصال الإنترنت وحاول تاني';
+}
+
+function setExportButtonsBusy(busy) {
+  ['exportImageBtn', 'exportPdfBtn'].forEach(id => { const b = $('#' + id); if (b) b.disabled = busy; });
+}
+
+// Loads a player avatar ONLY if it's safe to draw onto a canvas we intend
+// to export later (own data: URI, or a remote URL that a CORS-anonymous
+// load actually succeeds for). Anything else silently resolves to null so
+// the caller draws a plain initial-letter avatar instead — this guarantees
+// the final canvas can never end up "tainted" (which used to make the
+// whole export fail/blank without a clear reason).
+function loadAvatarSafely(url) {
+  return new Promise((resolve) => {
+    if (!url || typeof url !== 'string') { resolve(null); return; }
+    const isDataUri = /^data:image\//i.test(url);
+    const img = new Image();
+    if (!isDataUri) img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function isArabicText(s) { return /[\u0600-\u06FF]/.test(s || ''); }
+
+// Draws text with the correct bidi direction for its content (so Arabic
+// shapes/joins correctly) and truncates with an ellipsis if it overflows
+// maxWidth, similar to CSS text-overflow: ellipsis.
+function fitText(ctx, text, maxWidth) {
+  text = text || '';
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(text.slice(0, mid) + '…').width <= maxWidth) lo = mid; else hi = mid - 1;
+  }
+  return text.slice(0, lo) + '…';
+}
+function drawBidiText(ctx, text, x, y, maxWidth) {
+  ctx.direction = isArabicText(text) ? 'rtl' : 'ltr';
+  ctx.fillText(maxWidth ? fitText(ctx, text, maxWidth) : (text || ''), x, y);
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+const EXPORT_FONT_STACK = "'Rajdhani', Tahoma, Arial, sans-serif";
+
+function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache) {
+  const avatarR = 12;
+  const cyMid = y + h / 2;
+  const pad = 10;
+
+  if (playerId == null) {
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = "italic 11px " + EXPORT_FONT_STACK;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    drawBidiText(ctx, match.isBye ? 'باي (تأهل تلقائي)' : 'بانتظار المتأهل', x + pad, cyMid, w - pad * 2);
+    return;
+  }
+
+  const isWinner = match.winnerId != null && match.winnerId === playerId;
+  if (isWinner) {
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.08)';
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  }
+
+  const p = getPlayer(playerId);
+  const name = p ? p.name : '—';
+  const cx = x + pad + avatarR;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cyMid, avatarR, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  const img = avatarCache.get(playerId);
+  if (img) {
+    ctx.drawImage(img, cx - avatarR, cyMid - avatarR, avatarR * 2, avatarR * 2);
+  } else {
+    ctx.fillStyle = colors.primary;
+    ctx.fillRect(cx - avatarR, cyMid - avatarR, avatarR * 2, avatarR * 2);
+    ctx.fillStyle = colors.bgDeep;
+    ctx.font = "700 11px " + EXPORT_FONT_STACK;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.direction = 'ltr';
+    ctx.fillText((name || '?').trim().charAt(0).toUpperCase(), cx, cyMid + 1);
+  }
+  ctx.restore();
+  if (isWinner) {
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cyMid, avatarR, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  const textX = cx + avatarR + 8;
+  const maxTextW = (x + w - pad) - textX;
+  const hasId = !!(p && p.discordId);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = isWinner ? '#ffd700' : colors.textSecondary;
+  ctx.font = (isWinner ? '600' : '500') + ' 12px ' + EXPORT_FONT_STACK;
+  drawBidiText(ctx, name, textX, cyMid - (hasId ? 6 : 0), maxTextW);
+  if (hasId) {
+    ctx.font = "400 9px 'JetBrains Mono', monospace";
+    ctx.fillStyle = colors.textMuted;
+    ctx.direction = 'ltr';
+    ctx.fillText(fitText(ctx, p.discordId, maxTextW), textX, cyMid + 8);
+  }
+}
+
+// Builds the full bracket export at a fixed 2x pixel density for a crisp
+// download regardless of the viewer's screen.
+async function buildBracketExportCanvas() {
+  if (!state.tournamentStarted || !state.matches.length) throw new Error('NO_DATA');
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => (cs.getPropertyValue(name) || '').trim() || fallback;
+  const colors = {
+    bgDeep: v('--bg-deep', '#0d0c12'),
+    bgCard: v('--bg-card', '#1b1822'),
+    border: v('--border', '#332f3d'),
+    primary: v('--primary', '#9184c9'),
+    textPrimary: v('--text-primary', '#ece8f5'),
+    textSecondary: v('--text-secondary', '#b8b0cc'),
+    textMuted: v('--text-muted', '#7d7690')
+  };
+
+  const rounds = [...new Set(state.matches.map(m => m.round))].sort((a, b) => a - b);
+  const maxR = Math.max(...rounds);
+  const nameMap = {};
+  nameMap[maxR] = 'النهائي';
+  if (maxR === 3) { nameMap[1] = 'ربع النهائي'; nameMap[2] = 'نصف النهائي'; }
+  else if (maxR === 2) { nameMap[1] = 'نصف النهائي'; }
+  const matchesByRound = rounds.map(r => state.matches.filter(m => m.round === r).sort((a, b) => a.position - b.position));
+
+  const scale = 2;
+  const cardW = 230, slotH = 40, cardH = slotH * 2, gapY = 22, gapX = 70, marginX = 40, headerH = 70, topPad = 46, bottomPad = 40;
+
+  const round1Count = matchesByRound[0].length;
+  const contentH = round1Count * cardH + (round1Count - 1) * gapY;
+  const cssW = marginX * 2 + rounds.length * cardW + (rounds.length - 1) * gapX;
+  const cssH = topPad + headerH + contentH + bottomPad;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(cssW * scale);
+  canvas.height = Math.ceil(cssH * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = colors.bgDeep;
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = colors.textPrimary;
+  ctx.font = "700 22px " + EXPORT_FONT_STACK;
+  drawBidiText(ctx, state.settings.name || 'K-Gang Tournament', cssW / 2, topPad - 12, cssW - marginX * 2);
+
+  const yPos = [];
+  yPos[0] = matchesByRound[0].map((m, i) => topPad + headerH + i * (cardH + gapY) + cardH / 2);
+  for (let r = 1; r < rounds.length; r++) {
+    yPos[r] = matchesByRound[r].map((m, i) => (yPos[r - 1][2 * i] + yPos[r - 1][2 * i + 1]) / 2);
+  }
+
+  const playerIds = new Set();
+  state.matches.forEach(m => { if (m.player1Id) playerIds.add(m.player1Id); if (m.player2Id) playerIds.add(m.player2Id); });
+  const avatarCache = new Map();
+  await Promise.all([...playerIds].map(async pid => {
+    const p = getPlayer(pid);
+    if (!p || !p.avatarUrl) return;
+    const img = await loadAvatarSafely(p.avatarUrl);
+    if (img) avatarCache.set(pid, img);
+  }));
+
+  // Connectors first, so card fills sit cleanly on top of the line ends.
+  ctx.strokeStyle = colors.border;
+  ctx.lineWidth = 1.5;
+  for (let r = 0; r < rounds.length - 1; r++) {
+    const x = marginX + r * (cardW + gapX);
+    const nextX = marginX + (r + 1) * (cardW + gapX);
+    const midX = x + cardW + gapX / 2;
+    matchesByRound[r + 1].forEach((nm, ni) => {
+      const y0 = yPos[r][2 * ni], y1 = yPos[r][2 * ni + 1], nextCy = yPos[r + 1][ni];
+      ctx.beginPath();
+      ctx.moveTo(x + cardW, y0); ctx.lineTo(midX, y0);
+      ctx.moveTo(x + cardW, y1); ctx.lineTo(midX, y1);
+      ctx.moveTo(midX, y0); ctx.lineTo(midX, y1);
+      ctx.moveTo(midX, nextCy); ctx.lineTo(nextX, nextCy);
+      ctx.stroke();
+    });
+  }
+
+  rounds.forEach((round, r) => {
+    const x = marginX + r * (cardW + gapX);
+    ctx.font = "700 13px " + EXPORT_FONT_STACK;
+    ctx.fillStyle = colors.textMuted;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    drawBidiText(ctx, nameMap[round] || ('الدور ' + round), x + cardW / 2, topPad + headerH - 18, cardW);
+
+    matchesByRound[r].forEach((match, i) => {
+      const y = yPos[r][i] - cardH / 2;
+      roundRectPath(ctx, x, y, cardW, cardH, 8);
+      ctx.fillStyle = colors.bgCard;
+      ctx.fill();
+      ctx.strokeStyle = match.winnerId ? 'rgba(145, 132, 201, 0.5)' : colors.border;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      drawExportSlot(ctx, match, match.player1Id, x, y, cardW, slotH, colors, avatarCache);
+      ctx.strokeStyle = colors.border;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + 8, y + slotH); ctx.lineTo(x + cardW - 8, y + slotH); ctx.stroke();
+      drawExportSlot(ctx, match, match.player2Id, x, y + slotH, cardW, slotH, colors, avatarCache);
+    });
+  });
+
+  return canvas;
+}
+
+async function exportBracketAsImage() {
+  setExportButtonsBusy(true);
+  const label = $('#exportImageBtnText');
+  const prevLabel = label ? label.textContent : '';
+  if (label) label.textContent = 'جاري التصدير...';
+  try {
+    const canvas = await buildBracketExportCanvas();
+    const link = document.createElement('a');
+    link.download = exportFileBaseName() + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    toast('تم تصدير الجدول كصورة');
+  } catch (e) {
+    console.error('[K-Gang] image export failed', e);
+    toast(describeExportError(e), 'error');
+  } finally {
+    if (label) label.textContent = prevLabel;
+    setExportButtonsBusy(false);
+  }
+}
+
+async function exportBracketAsPDF() {
+  setExportButtonsBusy(true);
+  const label = $('#exportPdfBtnText');
+  const prevLabel = label ? label.textContent : '';
+  if (label) label.textContent = 'جاري التصدير...';
+  try {
+    const canvas = await buildBracketExportCanvas();
+    await ensurePdfLibLoaded();
+    const { jsPDF } = window.jspdf;
+    // One page sized exactly to the bracket image (px unit) — simplest and
+    // sharpest result, avoids splitting a wide bracket across pages.
+    const pdf = new jsPDF({
+      orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait',
+      unit: 'px',
+      format: [canvas.width, canvas.height],
+      hotfixes: ['px_scaling']
+    });
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, canvas.width, canvas.height);
+    pdf.save(exportFileBaseName() + '.pdf');
+    toast('تم تصدير الجدول كملف PDF');
+  } catch (e) {
+    console.error('[K-Gang] pdf export failed', e);
+    toast(describeExportError(e), 'error');
+  } finally {
+    if (label) label.textContent = prevLabel;
+    setExportButtonsBusy(false);
+  }
+}
+
 // ========== UI ==========
 function updateStats() {
   $('#playerCount').textContent = state.players.length;
@@ -1055,6 +1511,7 @@ function switchTab(tab) {
   $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
   if (tab === 'settings') updateDefaultPasswordWarning();
   if (tab === 'theme') renderThemeTab();
+  if (tab === 'effects') renderEffectsTab();
 }
 
 function updateDefaultPasswordWarning() {
@@ -1079,6 +1536,14 @@ function showChampionModal(playerId) {
   img.src = sanitizeAvatarUrl(p.avatarUrl, p.name);
   img.onerror = function() { this.src = defaultAvatar(p.name); };
   $('#championName').textContent = p.name;
+  const avatarWrap = $('#championAvatar');
+  if (avatarWrap) {
+    avatarWrap.classList.remove('champion-flip-anim');
+    if (state.theme.animations && state.theme.animations.winnerFlip) {
+      void avatarWrap.offsetWidth; // reflow so the animation can (re)start
+      avatarWrap.classList.add('champion-flip-anim');
+    }
+  }
   $('#championModal').classList.add('open');
 }
 
@@ -1164,7 +1629,20 @@ function loadShared() {
 
 // ========== Init ==========
 function renderAll() {
-  try { applyThemeFull(); renderThemeTab(); } catch (e) { console.error('[K-Gang] theme apply failed', e); }
+  // renderThemeTab()/renderEffectsTab() rebuild a fair amount of admin-only
+  // DOM (swatches, color pickers, sliders). renderAll() runs on every cloud
+  // sync (not just user actions), so doing that work while the panel is
+  // closed — or open on a different tab — was pure waste on every poll.
+  // switchTab() already (re)builds a tab the moment someone opens it, so
+  // skipping it here costs nothing functionally.
+  try {
+    applyThemeFull();
+    const panelOpen = $('#adminPanel').classList.contains('open');
+    const activeTab = panelOpen ? document.querySelector('.tab-btn.active') : null;
+    const activeTabId = activeTab ? activeTab.dataset.tab : null;
+    if (activeTabId === 'theme') renderThemeTab();
+    if (activeTabId === 'effects') renderEffectsTab();
+  } catch (e) { console.error('[K-Gang] theme apply failed', e); }
   $('#tournamentTitle').textContent = state.settings.name;
   $('#tournamentDesc').textContent = state.settings.description;
   $('#tournamentName').value = state.settings.name;
