@@ -108,12 +108,29 @@ function initCloud() {
     console.warn('[K-Gang] JSONBin not configured yet — falling back to localStorage only. See comment above JSONBIN_BIN_ID.');
     return false;
   }
+  if (window.location.protocol === 'file:') {
+    console.warn('[K-Gang] Running from file:// — cloud sync will be blocked by browser CORS policy. Serve via a local web server (e.g. python -m http.server) or deploy to HTTPS.');
+    toast('⚠️ الملف مفتوح من الجهاز مباشرة — السحابة مش هتشتغل. شغّله على سيرفر أو ارفعه على هاست HTTPS', 'error');
+    return false;
+  }
   return true;
 }
 
 function getSyncPayload() {
   const payload = {};
   SYNCED_FIELDS.forEach(k => { payload[k] = state[k]; });
+  // Base64 data-URLs (from uploaded background images) can easily balloon the
+  // payload past JSONBin's free-tier 100 KB limit, which causes a 413/400 and
+  // the "cloud save failed" toast.  Only share http(s) URLs across devices;
+  // data-URLs stay local (each admin re-uploads their own image).
+  if (payload.theme && payload.theme.background) {
+    const bg = payload.theme.background;
+    if (bg.imageUrl && /^data:image\//i.test(bg.imageUrl)) {
+      payload.theme = Object.assign({}, payload.theme, {
+        background: Object.assign({}, bg, { imageUrl: '' })
+      });
+    }
+  }
   return payload;
 }
 
@@ -158,19 +175,73 @@ function loadLocalCache() {
   return false;
 }
 
+let _cloudRetryCount = 0;
+const CLOUD_MAX_RETRIES = 3;
+const CLOUD_RETRY_DELAY = 2000;
+
+function _isCorsError(e) {
+  // Browsers report CORS failures as TypeError with no status info;
+  // a TypeError with "Failed to fetch" (Chromium) or "NetworkError" (Firefox)
+  // on a cross-origin request is almost certainly CORS being blocked.
+  if (e instanceof TypeError && window.location.protocol === 'file:') return true;
+  const msg = (e.message || '').toLowerCase();
+  return e instanceof TypeError && (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('Load failed'));
+}
+
+function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 async function pushToCloud() {
-  try {
-    const res = await fetch(JSONBIN_BASE, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Access-Key': JSONBIN_KEY },
-      body: JSON.stringify(getSyncPayload())
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    if (data.metadata && data.metadata.updatedAt) lastSeenUpdatedAt = data.metadata.updatedAt;
-  } catch (e) {
-    console.error('[K-Gang] cloud save failed', e);
-    toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
+  const payload = JSON.stringify(getSyncPayload());
+  // JSONBin free-tier hard-caps at 100 KB per record; warn early instead of
+  // letting the API reject the request with a cryptic 413/400.
+  if (payload.length > 95000) {
+    console.warn('[K-Gang] cloud payload too large:', payload.length, 'bytes');
+    toast('⚠️ البيانات كبيرة جداً للسحابة — تحقق من صورة الخلفية', 'error');
+    return;
+  }
+
+  for (let attempt = 1; attempt <= CLOUD_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(JSONBIN_BASE, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Access-Key': JSONBIN_KEY },
+        body: payload
+      });
+      if (!res.ok) {
+        const status = res.status;
+        console.error('[K-Gang] cloud PUT returned HTTP', status);
+        // 401/403 = bad key, 429 = rate-limit, 413 = payload too large
+        if (status === 401 || status === 403) {
+          toast('⚠️ مفتاح JSONBin غير صالح (HTTP ' + status + ') — راجع الإعدادات أعلى script.js', 'error');
+          return;
+        }
+        if (status === 413 || status === 400) {
+          toast('⚠️ حجم البيانات أكبر من سعة السحابة — شيل صورة الخلفية أو صغّرها', 'error');
+          return;
+        }
+        // 429 rate-limit or other transient — retry
+        if (attempt < CLOUD_MAX_RETRIES) { await _delay(CLOUD_RETRY_DELAY * attempt); continue; }
+        throw new Error('HTTP ' + status);
+      }
+      const data = await res.json();
+      if (data.metadata && data.metadata.updatedAt) lastSeenUpdatedAt = data.metadata.updatedAt;
+      _cloudRetryCount = 0;
+      return;
+    } catch (e) {
+      console.error('[K-Gang] cloud save attempt ' + attempt + '/' + CLOUD_MAX_RETRIES + ' failed:', e.message || e);
+      if (_isCorsError(e)) {
+        toast('⚠️ تم حجر الاتصال بالسحابة (CORS) — تأكد من فتح الموقع عبر HTTPS', 'error');
+        return;
+      }
+      if (attempt < CLOUD_MAX_RETRIES) { await _delay(CLOUD_RETRY_DELAY * attempt); continue; }
+      _cloudRetryCount++;
+      if (_cloudRetryCount >= 3) {
+        toast('⚠️ تعذّر الاتصال بالسحابة — التعديلات محفوظة محلياً', 'error');
+        _cloudRetryCount = 0;
+      } else {
+        toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
+      }
+    }
   }
 }
 
@@ -178,26 +249,34 @@ async function pushToCloud() {
 // (including this one from another tab) so all devices converge — with a
 // few seconds of latency instead of Firestore's instant push.
 async function pullFromCloud() {
-  try {
-    const res = await fetch(JSONBIN_BASE + '/latest', {
-      headers: { 'X-Access-Key': JSONBIN_KEY }
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    const updatedAt = data.metadata && data.metadata.updatedAt;
-    if (updatedAt && updatedAt === lastSeenUpdatedAt) return; // nothing new since last check
-    lastSeenUpdatedAt = updatedAt;
-    isApplyingRemoteUpdate = true;
-    const record = data.record || {};
-    SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
-    ensureAnimationsDefaults();
-    buildPlayerMap();
-    saveLocalOnly();
-    renderAll();
-    isApplyingRemoteUpdate = false;
-  } catch (e) {
-    console.error('[K-Gang] cloud pull failed', e);
-    toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات JSONBin أعلى script.js', 'error');
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(JSONBIN_BASE + '/latest', {
+        headers: { 'X-Access-Key': JSONBIN_KEY }
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const updatedAt = data.metadata && data.metadata.updatedAt;
+      if (updatedAt && updatedAt === lastSeenUpdatedAt) return;
+      lastSeenUpdatedAt = updatedAt;
+      isApplyingRemoteUpdate = true;
+      try {
+        const record = data.record || {};
+        SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
+        ensureAnimationsDefaults();
+        buildPlayerMap();
+        saveLocalOnly();
+        renderAll();
+      } finally {
+        isApplyingRemoteUpdate = false;
+      }
+      return;
+    } catch (e) {
+      console.error('[K-Gang] cloud pull attempt ' + attempt + '/3 failed', e);
+      isApplyingRemoteUpdate = false;
+      if (_isCorsError(e)) return;
+      if (attempt < 3) { await _delay(1000 * attempt); continue; }
+    }
   }
 }
 
