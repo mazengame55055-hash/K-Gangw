@@ -13,6 +13,10 @@
 </head>
 <body>
 
+  <!-- Site background layer (admin-configurable: color / gradient / image) -->
+  <div class="site-bg-layer" id="siteBgLayer"></div>
+  <div class="site-bg-overlay" id="siteBgOverlay"></div>
+
   <!-- Noise Overlay -->
   <div class="noise-overlay"></div>
 
@@ -137,6 +141,7 @@
       <div class="panel-tabs">
         <button class="tab-btn active" data-tab="players" onclick="switchTab('players')">اللاعبون</button>
         <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">الإعدادات</button>
+        <button class="tab-btn" data-tab="theme" onclick="switchTab('theme')">المظهر</button>
         <button class="tab-btn" data-tab="manage" onclick="switchTab('manage')">إدارة البطولة</button>
       </div>
 
@@ -202,6 +207,104 @@
           </div>
           <button class="btn-primary" onclick="saveSettings()">حفظ الإعدادات</button>
         </div>
+      </div>
+
+      <!-- Theme Tab -->
+      <div class="tab-content" id="tab-theme">
+
+        <div class="theme-section">
+          <div class="theme-section-title">ثيمات جاهزة</div>
+          <p class="theme-section-desc">اختر ثيم جاهز — بيتطبق على الموقع لكل الزوار فوراً.</p>
+          <div class="theme-grid" id="themeGrid"></div>
+        </div>
+
+        <div class="theme-section">
+          <div class="theme-section-title">ألوان مخصصة</div>
+          <p class="theme-section-desc">عدّل أي لون يدوياً — باقي الألوان (الحدود، الظلال، درجات النص) بتتولّد تلقائياً منها.</p>
+          <div class="color-picker-grid">
+            <div class="color-picker-item">
+              <label for="themeColorPrimary">اللون الأساسي</label>
+              <input type="color" id="themeColorPrimary" oninput="updateThemeColor('primary', this.value)">
+            </div>
+            <div class="color-picker-item">
+              <label for="themeColorText">لون النص</label>
+              <input type="color" id="themeColorText" oninput="updateThemeColor('textPrimary', this.value)">
+            </div>
+            <div class="color-picker-item">
+              <label for="themeColorBgDeep">خلفية الموقع</label>
+              <input type="color" id="themeColorBgDeep" oninput="updateThemeColor('bgDeep', this.value)">
+            </div>
+            <div class="color-picker-item">
+              <label for="themeColorBgSurface">خلفية البطاقات</label>
+              <input type="color" id="themeColorBgSurface" oninput="updateThemeColor('bgSurface', this.value)">
+            </div>
+          </div>
+        </div>
+
+        <div class="theme-section">
+          <div class="theme-section-title">الخط (Font)</div>
+          <div class="form-group">
+            <select id="fontSelect" onchange="updateFontSelection(this.value)"></select>
+          </div>
+          <div class="font-preview-box">
+            <div class="fp-display">K-Gang Championship — البطولة</div>
+            <div class="fp-body">تنافس. انتصر. احكم. — نص تجريبي لعرض شكل الخط</div>
+          </div>
+        </div>
+
+        <div class="theme-section">
+          <div class="theme-section-title">خلفية الموقع</div>
+          <div class="bg-type-tabs" id="bgTypeTabs">
+            <button type="button" class="bg-type-tab" data-bgtype="default" onclick="updateBgType('default')">افتراضية</button>
+            <button type="button" class="bg-type-tab" data-bgtype="solid" onclick="updateBgType('solid')">لون</button>
+            <button type="button" class="bg-type-tab" data-bgtype="gradient" onclick="updateBgType('gradient')">تدرج</button>
+            <button type="button" class="bg-type-tab" data-bgtype="image" onclick="updateBgType('image')">صورة</button>
+          </div>
+
+          <div class="bg-option-panel" id="bgPanel-solid">
+            <div class="color-picker-item">
+              <label for="bgSolidColor">لون الخلفية</label>
+              <input type="color" id="bgSolidColor" oninput="updateBgValue()">
+            </div>
+          </div>
+
+          <div class="bg-option-panel" id="bgPanel-gradient">
+            <div class="color-picker-grid">
+              <div class="color-picker-item">
+                <label for="bgGradColor1">لون 1</label>
+                <input type="color" id="bgGradColor1" oninput="updateBgValue()">
+              </div>
+              <div class="color-picker-item">
+                <label for="bgGradColor2">لون 2</label>
+                <input type="color" id="bgGradColor2" oninput="updateBgValue()">
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-option-panel" id="bgPanel-image">
+            <div class="bg-upload-row">
+              <input type="text" id="bgImageUrl" placeholder="رابط صورة (https://...)" oninput="updateBgValue()">
+              <button type="button" class="bg-upload-btn" onclick="$('#bgImageFile').click()">رفع صورة</button>
+              <input type="file" id="bgImageFile" accept="image/*" style="display:none" onchange="handleBgImageUpload(event)">
+            </div>
+            <div class="bg-image-preview" id="bgImagePreview"></div>
+            <div class="range-row">
+              <label for="bgOverlayRange">تعتيم</label>
+              <input type="range" id="bgOverlayRange" min="0" max="90" value="55" oninput="updateBgOverlay(this.value)">
+              <span class="range-val" id="bgOverlayVal">55%</span>
+            </div>
+            <div class="range-row">
+              <label for="bgBlurRange">ضبابية</label>
+              <input type="range" id="bgBlurRange" min="0" max="20" value="0" oninput="updateBgBlur(this.value)">
+              <span class="range-val" id="bgBlurVal">0px</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-secondary theme-reset-btn" onclick="resetTheme()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          استعادة المظهر الافتراضي
+        </button>
       </div>
 
       <!-- Manage Tab -->

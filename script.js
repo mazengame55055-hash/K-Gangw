@@ -29,6 +29,14 @@ const state = {
     name: 'K-Gang Valorant Championship',
     description: 'تنافس. انتصر. احكم.',
     type: 'single'
+  },
+  // Site-wide appearance, set from the admin panel's "المظهر" tab and
+  // synced to every visitor (same JSONBin state as players/settings).
+  theme: {
+    preset: 'kgang',
+    colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' },
+    font: 'rajdhani_inter',
+    background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 }
   }
 };
 
@@ -66,7 +74,7 @@ const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b/' + JSONBIN_BIN_ID;
 // Fields that are shared with everyone via the cloud. Deliberately excludes
 // `isLocked`, which stays per-device/per-session (so unlocking the admin
 // panel on one phone doesn't unlock it for every visitor).
-const SYNCED_FIELDS = ['players', 'matches', 'tournamentStarted', 'tournamentFinished', 'tournamentPaused', 'nextPlayerId', 'nextMatchId', 'adminPasswordHash', 'settings'];
+const SYNCED_FIELDS = ['players', 'matches', 'tournamentStarted', 'tournamentFinished', 'tournamentPaused', 'nextPlayerId', 'nextMatchId', 'adminPasswordHash', 'settings', 'theme'];
 
 let cloudEnabled = false;
 let isApplyingRemoteUpdate = false;
@@ -241,6 +249,319 @@ function toast(msg, type) {
   t.textContent = msg;
   $('#toastContainer').appendChild(t);
   setTimeout(() => { t.classList.add('removing'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+// ========== Theme Engine ==========
+// Presets only define 4 base colors — every other CSS variable (borders,
+// hover shades, secondary/muted text, glows) is derived from these at
+// apply-time, so a theme change (preset OR a manually-picked color)
+// consistently recolors the whole site instead of leaving mismatched bits.
+const THEME_PRESETS = {
+  kgang:     { label: 'K-Gang الأصلي',   colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' } },
+  cyberpunk: { label: 'سايبربانك',       colors: { primary: '#ff2e9a', textPrimary: '#f2f0ff', bgDeep: '#08060f', bgSurface: '#160f22' } },
+  crimson:   { label: 'قرمزي',            colors: { primary: '#e5484d', textPrimary: '#f5e8e8', bgDeep: '#120808', bgSurface: '#1f1010' } },
+  emerald:   { label: 'زمردي',            colors: { primary: '#3ecf8e', textPrimary: '#e6f5ee', bgDeep: '#07120d', bgSurface: '#10201a' } },
+  ocean:     { label: 'محيطي',            colors: { primary: '#4fa3f7', textPrimary: '#e8f0fa', bgDeep: '#070d16', bgSurface: '#0f1c2e' } },
+  sunset:    { label: 'غروب',             colors: { primary: '#f2a154', textPrimary: '#f7ecdf', bgDeep: '#140d07', bgSurface: '#241708' } },
+  frost:     { label: 'فاتح (Frost)',     colors: { primary: '#6e5fa8', textPrimary: '#1c1826', bgDeep: '#f5f3fb', bgSurface: '#ffffff' } }
+};
+
+const FONT_PAIRS = {
+  rajdhani_inter: { label: 'الافتراضي — Rajdhani', display: 'Rajdhani', body: 'Inter', mono: 'JetBrains Mono', google: 'family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500' },
+  orbitron_barlow: { label: 'مستقبلي — Orbitron', display: 'Orbitron', body: 'Barlow', mono: 'JetBrains Mono', google: 'family=Orbitron:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500' },
+  arabic_modern: { label: 'عربي عصري — Almarai', display: 'Almarai', body: 'Cairo', mono: 'JetBrains Mono', google: 'family=Almarai:wght@400;700;800&family=Cairo:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500' },
+  elegant: { label: 'أنيق — Cinzel', display: 'Cinzel', body: 'Tajawal', mono: 'JetBrains Mono', google: 'family=Cinzel:wght@500;600;700;800&family=Tajawal:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500' },
+  tech_mono: { label: 'تقني — Chakra Petch', display: 'Chakra Petch', body: 'Rubik', mono: 'JetBrains Mono', google: 'family=Chakra+Petch:wght@500;600;700&family=Rubik:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500' }
+};
+
+function clamp255(n) { return Math.max(0, Math.min(255, Math.round(n))); }
+
+function hexToRgbObj(hex) {
+  let h = (hex || '#000000').replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const num = parseInt(h, 16) || 0;
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(v => clamp255(v).toString(16).padStart(2, '0')).join('');
+}
+
+// Mixes hexA and hexB; weightA is the 0..1 proportion of hexA in the result.
+function mixHex(hexA, hexB, weightA) {
+  const a = hexToRgbObj(hexA), b = hexToRgbObj(hexB);
+  return rgbToHex(
+    a.r * weightA + b.r * (1 - weightA),
+    a.g * weightA + b.g * (1 - weightA),
+    a.b * weightA + b.b * (1 - weightA)
+  );
+}
+
+function hexToRgba(hex, alpha) {
+  const { r, g, b } = hexToRgbObj(hex);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+// Applies the 4 base theme colors by deriving every other CSS variable
+// (borders, hover shades, secondary/muted text, glows) from them.
+function applyThemeColors(c) {
+  const root = document.documentElement.style;
+  root.setProperty('--primary', c.primary);
+  root.setProperty('--primary-dark', mixHex(c.primary, '#000000', 0.82));
+  root.setProperty('--primary-light', mixHex(c.primary, '#ffffff', 0.82));
+  root.setProperty('--primary-glow', hexToRgba(c.primary, 0.35));
+  root.setProperty('--primary-subtle', hexToRgba(c.primary, 0.12));
+
+  root.setProperty('--bg-deep', c.bgDeep);
+  root.setProperty('--bg-dark', mixHex(c.bgDeep, c.bgSurface, 0.5));
+  root.setProperty('--bg-surface', c.bgSurface);
+  root.setProperty('--bg-surface-hover', mixHex(c.bgSurface, c.textPrimary, 0.94));
+  root.setProperty('--bg-card', mixHex(c.bgSurface, c.bgDeep, 0.7));
+  root.setProperty('--bg-card-hover', mixHex(c.bgSurface, c.textPrimary, 0.91));
+
+  root.setProperty('--text-primary', c.textPrimary);
+  root.setProperty('--text-secondary', mixHex(c.textPrimary, c.bgDeep, 0.62));
+  root.setProperty('--text-muted', mixHex(c.textPrimary, c.bgDeep, 0.38));
+
+  root.setProperty('--border', mixHex(c.bgSurface, c.textPrimary, 0.88));
+  root.setProperty('--border-light', mixHex(c.bgSurface, c.textPrimary, 0.78));
+
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', c.bgDeep);
+}
+
+function applyThemeFont(fontId) {
+  const f = FONT_PAIRS[fontId] || FONT_PAIRS.rajdhani_inter;
+  let link = document.getElementById('dynamicFontLink');
+  if (!link) {
+    link = document.createElement('link');
+    link.id = 'dynamicFontLink';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+  }
+  link.href = 'https://fonts.googleapis.com/css2?' + f.google + '&display=swap';
+  const root = document.documentElement.style;
+  root.setProperty('--font-display', "'" + f.display + "', sans-serif");
+  root.setProperty('--font-body', "'" + f.body + "', sans-serif");
+  root.setProperty('--font-mono', "'" + f.mono + "', monospace");
+}
+
+// Same URL allow-list as sanitizeAvatarUrl (http/https or our generated
+// data URIs only) — this value gets interpolated into a CSS url(), so
+// anything else is rejected rather than trusted.
+function sanitizeBgImageUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (/^data:image\//i.test(trimmed)) return trimmed.replace(/["\\]/g, '');
+  try {
+    const u = new URL(trimmed, window.location.href);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return trimmed.replace(/["\\]/g, '');
+  } catch (e) {}
+  return '';
+}
+
+function applyThemeBackground(bg) {
+  const layer = $('#siteBgLayer');
+  const overlay = $('#siteBgOverlay');
+  if (!layer || !overlay) return;
+  layer.style.filter = bg.blur ? 'blur(' + bg.blur + 'px)' : 'none';
+
+  if (bg.type === 'solid') {
+    layer.style.backgroundImage = 'none';
+    layer.style.backgroundColor = bg.color || '#000000';
+    overlay.style.opacity = 0;
+  } else if (bg.type === 'gradient') {
+    layer.style.backgroundImage = 'linear-gradient(135deg, ' + (bg.gradColor1 || '#000') + ', ' + (bg.gradColor2 || '#333') + ')';
+    layer.style.backgroundColor = 'transparent';
+    overlay.style.opacity = 0;
+  } else if (bg.type === 'image') {
+    const safeUrl = sanitizeBgImageUrl(bg.imageUrl);
+    if (safeUrl) {
+      layer.style.backgroundImage = 'url("' + safeUrl + '")';
+      layer.style.backgroundColor = 'transparent';
+      overlay.style.opacity = (bg.overlayOpacity != null ? bg.overlayOpacity : 55) / 100;
+    } else {
+      layer.style.backgroundImage = 'none';
+      overlay.style.opacity = 1;
+    }
+  } else {
+    layer.style.backgroundImage = 'none';
+    layer.style.backgroundColor = 'transparent';
+    overlay.style.opacity = 1;
+  }
+}
+
+function applyThemeFull() {
+  applyThemeColors(state.theme.colors);
+  applyThemeFont(state.theme.font);
+  applyThemeBackground(state.theme.background);
+}
+
+// ----- Admin panel: Theme tab UI -----
+function renderThemeTab() {
+  const grid = $('#themeGrid');
+  if (!grid) return; // panel not in DOM yet
+
+  grid.innerHTML = Object.keys(THEME_PRESETS).map(id => {
+    const p = THEME_PRESETS[id];
+    const active = state.theme.preset === id;
+    return '<button type="button" class="theme-swatch' + (active ? ' active' : '') + '" onclick="selectThemePreset(\'' + id + '\')">' +
+      '<span class="theme-swatch-check">✓</span>' +
+      '<span class="theme-swatch-preview"><span style="background:' + p.colors.bgDeep + '"></span><span style="background:' + p.colors.primary + '"></span><span style="background:' + p.colors.bgSurface + '"></span></span>' +
+      '<span class="theme-swatch-label">' + escapeHtml(p.label) + '</span>' +
+      '</button>';
+  }).join('');
+
+  const c = state.theme.colors;
+  if ($('#themeColorPrimary')) $('#themeColorPrimary').value = c.primary;
+  if ($('#themeColorText')) $('#themeColorText').value = c.textPrimary;
+  if ($('#themeColorBgDeep')) $('#themeColorBgDeep').value = c.bgDeep;
+  if ($('#themeColorBgSurface')) $('#themeColorBgSurface').value = c.bgSurface;
+
+  const fontSelect = $('#fontSelect');
+  if (fontSelect) {
+    if (!fontSelect.dataset.built) {
+      fontSelect.innerHTML = Object.keys(FONT_PAIRS).map(id => '<option value="' + id + '">' + escapeHtml(FONT_PAIRS[id].label) + '</option>').join('');
+      fontSelect.dataset.built = '1';
+    }
+    fontSelect.value = state.theme.font;
+  }
+
+  const bg = state.theme.background;
+  $$('.bg-type-tab').forEach(b => b.classList.toggle('active', b.dataset.bgtype === bg.type));
+  ['solid', 'gradient', 'image'].forEach(t => {
+    const panel = $('#bgPanel-' + t);
+    if (panel) panel.classList.toggle('active', bg.type === t);
+  });
+  if ($('#bgSolidColor')) $('#bgSolidColor').value = bg.color || '#141219';
+  if ($('#bgGradColor1')) $('#bgGradColor1').value = bg.gradColor1 || '#1b1822';
+  if ($('#bgGradColor2')) $('#bgGradColor2').value = bg.gradColor2 || '#0d0c12';
+  if ($('#bgImageUrl')) $('#bgImageUrl').value = /^https?:/i.test(bg.imageUrl || '') ? bg.imageUrl : '';
+  const preview = $('#bgImagePreview');
+  if (preview) {
+    if (bg.type === 'image' && bg.imageUrl) {
+      preview.style.backgroundImage = 'url("' + sanitizeBgImageUrl(bg.imageUrl) + '")';
+      preview.classList.add('show');
+    } else {
+      preview.classList.remove('show');
+    }
+  }
+  if ($('#bgOverlayRange')) { $('#bgOverlayRange').value = bg.overlayOpacity; $('#bgOverlayVal').textContent = bg.overlayOpacity + '%'; }
+  if ($('#bgBlurRange')) { $('#bgBlurRange').value = bg.blur; $('#bgBlurVal').textContent = bg.blur + 'px'; }
+}
+
+function selectThemePreset(id) {
+  const preset = THEME_PRESETS[id];
+  if (!preset) return;
+  state.theme.preset = id;
+  state.theme.colors = Object.assign({}, preset.colors);
+  applyThemeColors(state.theme.colors);
+  renderThemeTab();
+  saveState();
+  toast('تم تطبيق ثيم "' + preset.label + '" على الموقع');
+}
+
+function updateThemeColor(key, value) {
+  state.theme.colors[key] = value;
+  state.theme.preset = 'custom';
+  applyThemeColors(state.theme.colors);
+  $$('.theme-swatch').forEach(b => b.classList.remove('active'));
+  saveState();
+}
+
+function updateFontSelection(fontId) {
+  if (!FONT_PAIRS[fontId]) return;
+  state.theme.font = fontId;
+  applyThemeFont(fontId);
+  saveState();
+  toast('تم تغيير الخط');
+}
+
+function updateBgType(type) {
+  state.theme.background.type = type;
+  applyThemeBackground(state.theme.background);
+  renderThemeTab();
+  saveState();
+}
+
+function updateBgValue() {
+  const bg = state.theme.background;
+  if (bg.type === 'solid') bg.color = $('#bgSolidColor').value;
+  else if (bg.type === 'gradient') { bg.gradColor1 = $('#bgGradColor1').value; bg.gradColor2 = $('#bgGradColor2').value; }
+  else if (bg.type === 'image') bg.imageUrl = $('#bgImageUrl').value.trim();
+  applyThemeBackground(bg);
+  const preview = $('#bgImagePreview');
+  if (preview && bg.type === 'image') {
+    const safe = sanitizeBgImageUrl(bg.imageUrl);
+    if (safe) { preview.style.backgroundImage = 'url("' + safe + '")'; preview.classList.add('show'); }
+    else preview.classList.remove('show');
+  }
+  saveState();
+}
+
+function updateBgOverlay(val) {
+  state.theme.background.overlayOpacity = Number(val);
+  $('#bgOverlayVal').textContent = val + '%';
+  applyThemeBackground(state.theme.background);
+  saveState();
+}
+
+function updateBgBlur(val) {
+  state.theme.background.blur = Number(val);
+  $('#bgBlurVal').textContent = val + 'px';
+  applyThemeBackground(state.theme.background);
+  saveState();
+}
+
+// Reads an uploaded image, downsizes it on a canvas, and stores it as a
+// compressed base64 data URL — no server/storage bucket needed. Kept
+// deliberately small: this data URL lives inside the same shared JSONBin
+// record as the rest of the tournament, which has a modest free-tier size
+// limit, so a big, uncompressed image could break syncing for everyone.
+function handleBgImageUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('لازم تختار ملف صورة', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = function() {
+    const img = new Image();
+    img.onload = function() {
+      const maxW = 900;
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+      state.theme.background.imageUrl = dataUrl;
+      applyThemeBackground(state.theme.background);
+      renderThemeTab();
+      saveState();
+      if (dataUrl.length > 70000) {
+        toast('⚠️ الصورة كبيرة نسبياً — ممكن متتزامنش مع باقي الزوار عبر السحابة. لو حابب كل الزوار يشوفوها، حط رابط صورة (URL) بدل الرفع', 'error');
+      } else {
+        toast('تم رفع الخلفية');
+      }
+    };
+    img.onerror = function() { toast('تعذّر قراءة الصورة', 'error'); };
+    img.src = reader.result;
+  };
+  reader.onerror = function() { toast('تعذّر قراءة الملف', 'error'); };
+  reader.readAsDataURL(file);
+}
+
+function resetTheme() {
+  state.theme = {
+    preset: 'kgang',
+    colors: Object.assign({}, THEME_PRESETS.kgang.colors),
+    font: 'rajdhani_inter',
+    background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 }
+  };
+  applyThemeFull();
+  renderThemeTab();
+  saveState();
+  toast('تم استعادة المظهر الافتراضي');
 }
 
 // ========== Password / Lock ==========
@@ -728,6 +1049,7 @@ function switchTab(tab) {
   $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
   if (tab === 'settings') updateDefaultPasswordWarning();
+  if (tab === 'theme') renderThemeTab();
 }
 
 function updateDefaultPasswordWarning() {
@@ -837,6 +1159,7 @@ function loadShared() {
 
 // ========== Init ==========
 function renderAll() {
+  try { applyThemeFull(); renderThemeTab(); } catch (e) { console.error('[K-Gang] theme apply failed', e); }
   $('#tournamentTitle').textContent = state.settings.name;
   $('#tournamentDesc').textContent = state.settings.description;
   $('#tournamentName').value = state.settings.name;
