@@ -36,7 +36,7 @@ const state = {
     type: 'single'
   },
   // Site-wide appearance, set from the admin panel's "المظهر" tab and
-  // synced to every visitor (same GitHub Gist state as players/settings).
+  // synced to every visitor (same JSONBin state as players/settings).
   theme: {
     preset: 'kgang',
     colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' },
@@ -73,16 +73,19 @@ async function hashPassword(pw) {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
-// ========== GitHub Gist Setup ==========
-// 1) Go to https://github.com/settings/tokens
-// 2) Generate new token (classic) with ONLY the "gist" scope.
-// 3) Go to https://gist.github.com and create a new empty Gist.
-//    Copy the Gist ID from the URL (the long hex string after the username).
-// 4) Paste both below. Until you do, the app falls back to localStorage only.
-const GIST_ID = 'cafbdd98a154c1bcae485c104a59ccce';
-const GIST_TOKEN = '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';
-const GIST_API = 'https://api.github.com/gists/' + GIST_ID;
-const GIST_FILENAME = 'kgang_state.json';
+// ========== JSONBin.io Setup ==========
+// 1) Log in at https://jsonbin.io/app/bins
+// 2) Click "+ Create Bin", paste a starter JSON object (players/matches/etc),
+//    save it, then copy the Bin ID it gives you.
+// 3) In your JSONBin dashboard, generate an Access Key scoped to just this
+//    bin if possible — do NOT use your Master Key here. Anyone who views
+//    this page's source can read this key, and a Master Key would let them
+//    read/write/delete every bin in your whole account, not just this one.
+// 4) Paste your Bin ID and key below. Until you do, the app falls back to
+//    localStorage (old behaviour: changes only visible on this device).
+const JSONBIN_BIN_ID = '6a51bd72f5f4af5e297f8ab7';
+const JSONBIN_KEY = '$2a$10$q7mO1ej/e57QkPcvv0PChOEpeLz5Achhnrkfb.DwYNek8Ka55PKUO';
+const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b/' + JSONBIN_BIN_ID;
 
 // Fields that are shared with everyone via the cloud. Deliberately excludes
 // `isLocked`, which stays per-device/per-session (so unlocking the admin
@@ -94,14 +97,15 @@ let isApplyingRemoteUpdate = false;
 let saveDebounceTimer = null;
 let pollTimer = null;
 let lastSeenUpdatedAt = null;
-// Poll interval — GitHub Gist has a generous 5 000 req/hr limit, but we
-// still pause while the tab is backgrounded to be polite. 30s strikes a
-// good balance between freshness and request economy.
-const POLL_INTERVAL_MS = 30000;
+// JSONBin has no real-time push like Firestore, so we poll instead. Kept
+// fairly slow (and paused while the tab is hidden) to stay within the free
+// tier's monthly request quota — this means updates from other visitors can
+// take a few seconds to appear, instead of Firestore's instant push.
+const POLL_INTERVAL_MS = 8000;
 
 function initCloud() {
-  if (GIST_ID === 'PASTE_YOUR_GIST_ID_HERE' || GIST_TOKEN === 'PASTE_YOUR_FINE_GRAINED_TOKEN_HERE') {
-    console.warn('[K-Gang] GitHub Gist not configured yet — falling back to localStorage only. See comment above GIST_ID.');
+  if (JSONBIN_BIN_ID === 'PASTE_YOUR_BIN_ID_HERE' || JSONBIN_KEY === 'PASTE_YOUR_ACCESS_OR_MASTER_KEY_HERE') {
+    console.warn('[K-Gang] JSONBin not configured yet — falling back to localStorage only. See comment above JSONBIN_BIN_ID.');
     return false;
   }
   return true;
@@ -115,13 +119,13 @@ function getSyncPayload() {
 
 // ========== Storage ==========
 // Always caches locally (instant reads on next visit / offline fallback).
-// Also pushes to GitHub Gist (debounced) when the cloud is configured, so
+// Also pushes to JSONBin (debounced) when the cloud is configured, so
 // every visitor's browser converges on the same shared state.
 function saveState() {
   try { localStorage.setItem('kgang_bracket_v1', JSON.stringify(state)); } catch (e) {}
   if (!cloudEnabled || isApplyingRemoteUpdate) return;
   clearTimeout(saveDebounceTimer);
-  saveDebounceTimer = setTimeout(pushToCloud, 1000);
+  saveDebounceTimer = setTimeout(pushToCloud, 600);
 }
 
 // Saves a purely local/per-device change (e.g. lock state) without pushing
@@ -155,63 +159,36 @@ function loadLocalCache() {
 }
 
 async function pushToCloud() {
-  const payload = JSON.stringify(getSyncPayload());
-  if (payload.length > 900000) {
-    toast('⚠️ البيانات كبيرة جداً — تم تخطي الرفع السحابي. قلل حجم الصور', 'error');
-    return;
-  }
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const res = await fetch(GIST_API, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + GIST_TOKEN
-        },
-        body: JSON.stringify({
-          files: { [GIST_FILENAME]: { content: payload } }
-        })
-      });
-      if (!res.ok) {
-        if (res.status === 403) throw new Error('QUOTA');
-        if (res.status === 401) throw new Error('AUTH');
-        throw new Error('HTTP ' + res.status);
-      }
-      const data = await res.json();
-      if (data.updated_at) lastSeenUpdatedAt = data.updated_at;
-      return;
-    } catch (e) {
-      console.error('[K-Gang] cloud save attempt ' + attempt + ' failed', e);
-      if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1000));
-      else {
-        if (e.message === 'QUOTA')
-          toast('⚠️ تم تجاوز حد الطلبات — انتظر شوية وحاول تاني', 'error');
-        else if (e.message === 'AUTH')
-          toast('⚠️ توكن الوصول غير صالح — تحقق من GIST_TOKEN في script.js', 'error');
-        else
-          toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
-      }
-    }
+  try {
+    const res = await fetch(JSONBIN_BASE, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Access-Key': JSONBIN_KEY },
+      body: JSON.stringify(getSyncPayload())
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.metadata && data.metadata.updatedAt) lastSeenUpdatedAt = data.metadata.updatedAt;
+  } catch (e) {
+    console.error('[K-Gang] cloud save failed', e);
+    toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
   }
 }
 
-// Polls the shared Gist. Applies remote changes made by ANY visitor
+// Polls the shared bin. Applies remote changes made by ANY visitor
 // (including this one from another tab) so all devices converge — with a
 // few seconds of latency instead of Firestore's instant push.
 async function pullFromCloud() {
   try {
-    const res = await fetch(GIST_API, {
-      headers: { 'Accept': 'application/vnd.github+json' }
+    const res = await fetch(JSONBIN_BASE + '/latest', {
+      headers: { 'X-Access-Key': JSONBIN_KEY }
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    const updatedAt = data.updated_at || null;
-    if (updatedAt && updatedAt === lastSeenUpdatedAt) return;
+    const updatedAt = data.metadata && data.metadata.updatedAt;
+    if (updatedAt && updatedAt === lastSeenUpdatedAt) return; // nothing new since last check
     lastSeenUpdatedAt = updatedAt;
-    const file = data.files && data.files[GIST_FILENAME];
-    if (!file || !file.content) return;
     isApplyingRemoteUpdate = true;
-    const record = JSON.parse(file.content);
+    const record = data.record || {};
     SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
     ensureAnimationsDefaults();
     buildPlayerMap();
@@ -220,7 +197,7 @@ async function pullFromCloud() {
     isApplyingRemoteUpdate = false;
   } catch (e) {
     console.error('[K-Gang] cloud pull failed', e);
-    toast('⚠️ تعذّر الاتصال بالبيانات السحابية — تحقق من الإعدادات أعلى script.js', 'error');
+    toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات JSONBin أعلى script.js', 'error');
   }
 }
 
@@ -635,9 +612,9 @@ function updateBgBlur(val) {
 
 // Reads an uploaded image, downsizes it on a canvas, and stores it as a
 // compressed base64 data URL — no server/storage bucket needed. Kept
-// deliberately small: this data URL lives inside the same shared GitHub Gist
-// as the rest of the tournament, which has a 1 MB file size limit, so a
-// big, uncompressed image could break syncing for everyone.
+// deliberately small: this data URL lives inside the same shared JSONBin
+// record as the rest of the tournament, which has a modest free-tier size
+// limit, so a big, uncompressed image could break syncing for everyone.
 function handleBgImageUpload(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
@@ -1689,6 +1666,6 @@ document.addEventListener('DOMContentLoaded', function() {
   if (cloudEnabled) {
     startPolling(); // polling sync — every visitor converges within a few seconds
   } else {
-    toast('⚠️ التخزين السحابي مش متظبط لسه — التعديلات هتفضل محلية بس على الجهاز ده. راجع الإعدادات أعلى script.js (GIST_ID + GIST_TOKEN)', 'error');
+    toast('⚠️ التخزين السحابي مش متظبط لسه — التعديلات هتفضل محلية بس على الجهاز ده. راجع الإعدادات أعلى script.js', 'error');
   }
 });
