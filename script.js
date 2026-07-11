@@ -49,21 +49,19 @@ async function hashPassword(pw) {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
-// ========== Firebase Setup ==========
-// 1) Create a free project at https://console.firebase.google.com
-// 2) Enable "Firestore Database" (start in test mode, or use the security
-//    rules from the setup guide you were given).
-// 3) Project settings → your apps → Web app → copy the config object below.
-// 4) Paste your own values here. Until you do, the app falls back to
+// ========== JSONBin.io Setup ==========
+// 1) Log in at https://jsonbin.io/app/bins
+// 2) Click "+ Create Bin", paste a starter JSON object (players/matches/etc),
+//    save it, then copy the Bin ID it gives you.
+// 3) In your JSONBin dashboard, generate an Access Key scoped to just this
+//    bin if possible — do NOT use your Master Key here. Anyone who views
+//    this page's source can read this key, and a Master Key would let them
+//    read/write/delete every bin in your whole account, not just this one.
+// 4) Paste your Bin ID and key below. Until you do, the app falls back to
 //    localStorage (old behaviour: changes only visible on this device).
-const firebaseConfig = {
-  apiKey: "AIzaSyCiqxBcA2V5OMeRuWXOo4qQRkeQ_kWFL5s",
-  authDomain: "kgang-bracket.firebaseapp.com",
-  projectId: "kgang-bracket",
-  storageBucket: "kgang-bracket.firebasestorage.app",
-  messagingSenderId: "636100538077",
-  appId: "1:636100538077:web:a2d46aee7bd34dd723b534"
-};
+const JSONBIN_BIN_ID = 'PASTE_YOUR_BIN_ID_HERE';
+const JSONBIN_KEY = 'PASTE_YOUR_ACCESS_OR_MASTER_KEY_HERE';
+const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b/' + JSONBIN_BIN_ID;
 
 // Fields that are shared with everyone via the cloud. Deliberately excludes
 // `isLocked`, which stays per-device/per-session (so unlocking the admin
@@ -71,23 +69,22 @@ const firebaseConfig = {
 const SYNCED_FIELDS = ['players', 'matches', 'tournamentStarted', 'tournamentFinished', 'tournamentPaused', 'nextPlayerId', 'nextMatchId', 'adminPasswordHash', 'settings'];
 
 let cloudEnabled = false;
-let tournamentDocRef = null;
 let isApplyingRemoteUpdate = false;
 let saveDebounceTimer = null;
+let pollTimer = null;
+let lastSeenUpdatedAt = null;
+// JSONBin has no real-time push like Firestore, so we poll instead. Kept
+// fairly slow (and paused while the tab is hidden) to stay within the free
+// tier's monthly request quota — this means updates from other visitors can
+// take a few seconds to appear, instead of Firestore's instant push.
+const POLL_INTERVAL_MS = 8000;
 
-function initFirebase() {
-  if (firebaseConfig.apiKey === 'YOUR_API_KEY') {
-    console.warn('[K-Gang] Firebase not configured yet — falling back to localStorage only. See comment above firebaseConfig.');
+function initCloud() {
+  if (JSONBIN_BIN_ID === 'PASTE_YOUR_BIN_ID_HERE' || JSONBIN_KEY === 'PASTE_YOUR_ACCESS_OR_MASTER_KEY_HERE') {
+    console.warn('[K-Gang] JSONBin not configured yet — falling back to localStorage only. See comment above JSONBIN_BIN_ID.');
     return false;
   }
-  try {
-    firebase.initializeApp(firebaseConfig);
-    tournamentDocRef = firebase.firestore().collection('tournaments').doc('kgang-main');
-    return true;
-  } catch (e) {
-    console.error('[K-Gang] Firebase init failed', e);
-    return false;
-  }
+  return true;
 }
 
 function getSyncPayload() {
@@ -98,18 +95,13 @@ function getSyncPayload() {
 
 // ========== Storage ==========
 // Always caches locally (instant reads on next visit / offline fallback).
-// Also pushes to Firestore (debounced) when the cloud is configured, so
+// Also pushes to JSONBin (debounced) when the cloud is configured, so
 // every visitor's browser converges on the same shared state.
 function saveState() {
   try { localStorage.setItem('kgang_bracket_v1', JSON.stringify(state)); } catch (e) {}
   if (!cloudEnabled || isApplyingRemoteUpdate) return;
   clearTimeout(saveDebounceTimer);
-  saveDebounceTimer = setTimeout(() => {
-    tournamentDocRef.set(getSyncPayload()).catch(err => {
-      console.error('[K-Gang] cloud save failed', err);
-      toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
-    });
-  }, 400);
+  saveDebounceTimer = setTimeout(pushToCloud, 600);
 }
 
 // Saves a purely local/per-device change (e.g. lock state) without pushing
@@ -141,29 +133,56 @@ function loadLocalCache() {
   return false;
 }
 
-// Subscribes to the shared cloud document. Fires on every change made by
-// ANY visitor (including this one), so all open tabs/devices stay in sync
-// in real time without needing a refresh.
-function subscribeToTournament() {
-  tournamentDocRef.onSnapshot(snap => {
-    if (snap.exists) {
-      isApplyingRemoteUpdate = true;
-      const data = snap.data();
-      SYNCED_FIELDS.forEach(k => { if (data[k] !== undefined) state[k] = data[k]; });
-      buildPlayerMap();
-      saveLocalOnly();
-      renderAll();
-      isApplyingRemoteUpdate = false;
-    } else {
-      // No shared doc yet — this is the very first run. Push whatever we
-      // currently have (defaults, or an imported share-link) to create it.
-      tournamentDocRef.set(getSyncPayload()).catch(e => console.error('[K-Gang] initial cloud write failed', e));
-    }
-  }, err => {
-    console.error('[K-Gang] cloud listen failed', err);
-    toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات Firebase أعلى script.js', 'error');
-  });
+async function pushToCloud() {
+  try {
+    const res = await fetch(JSONBIN_BASE, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      body: JSON.stringify(getSyncPayload())
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.metadata && data.metadata.updatedAt) lastSeenUpdatedAt = data.metadata.updatedAt;
+  } catch (e) {
+    console.error('[K-Gang] cloud save failed', e);
+    toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
+  }
 }
+
+// Polls the shared bin. Applies remote changes made by ANY visitor
+// (including this one from another tab) so all devices converge — with a
+// few seconds of latency instead of Firestore's instant push.
+async function pullFromCloud() {
+  try {
+    const res = await fetch(JSONBIN_BASE + '/latest', {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const updatedAt = data.metadata && data.metadata.updatedAt;
+    if (updatedAt && updatedAt === lastSeenUpdatedAt) return; // nothing new since last check
+    lastSeenUpdatedAt = updatedAt;
+    isApplyingRemoteUpdate = true;
+    const record = data.record || {};
+    SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
+    buildPlayerMap();
+    saveLocalOnly();
+    renderAll();
+    isApplyingRemoteUpdate = false;
+  } catch (e) {
+    console.error('[K-Gang] cloud pull failed', e);
+    toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات JSONBin أعلى script.js', 'error');
+  }
+}
+
+function startPolling() {
+  pullFromCloud();
+  pollTimer = setInterval(() => {
+    if (document.hidden) return; // pause while tab is backgrounded, saves quota
+    pullFromCloud();
+  }, POLL_INTERVAL_MS);
+}
+
 
 // ========== Helpers ==========
 function defaultAvatar(name) {
@@ -837,9 +856,9 @@ document.addEventListener('DOMContentLoaded', function() {
   state.isLocked = true; // Always start locked for security
   renderAll();
 
-  cloudEnabled = initFirebase();
+  cloudEnabled = initCloud();
   if (cloudEnabled) {
-    subscribeToTournament(); // real-time sync — every visitor sees every change
+    startPolling(); // polling sync — every visitor converges within a few seconds
   } else {
     toast('⚠️ التخزين السحابي مش متظبط لسه — التعديلات هتفضل محلية بس على الجهاز ده. راجع الإعدادات أعلى script.js', 'error');
   }
