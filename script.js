@@ -108,29 +108,12 @@ function initCloud() {
     console.warn('[K-Gang] JSONBin not configured yet — falling back to localStorage only. See comment above JSONBIN_BIN_ID.');
     return false;
   }
-  if (window.location.protocol === 'file:') {
-    console.warn('[K-Gang] Running from file:// — cloud sync will be blocked by browser CORS policy. Serve via a local web server (e.g. python -m http.server) or deploy to HTTPS.');
-    toast('⚠️ الملف مفتوح من الجهاز مباشرة — السحابة مش هتشتغل. شغّله على سيرفر أو ارفعه على هاست HTTPS', 'error');
-    return false;
-  }
   return true;
 }
 
 function getSyncPayload() {
   const payload = {};
   SYNCED_FIELDS.forEach(k => { payload[k] = state[k]; });
-  // Base64 data-URLs (from uploaded background images) can easily balloon the
-  // payload past JSONBin's free-tier 100 KB limit, which causes a 413/400 and
-  // the "cloud save failed" toast.  Only share http(s) URLs across devices;
-  // data-URLs stay local (each admin re-uploads their own image).
-  if (payload.theme && payload.theme.background) {
-    const bg = payload.theme.background;
-    if (bg.imageUrl && /^data:image\//i.test(bg.imageUrl)) {
-      payload.theme = Object.assign({}, payload.theme, {
-        background: Object.assign({}, bg, { imageUrl: '' })
-      });
-    }
-  }
   return payload;
 }
 
@@ -175,72 +158,77 @@ function loadLocalCache() {
   return false;
 }
 
-let _cloudRetryCount = 0;
-const CLOUD_MAX_RETRIES = 3;
-const CLOUD_RETRY_DELAY = 2000;
+// Avoids showing the same "cloud save failed" toast over and over if a
+// push keeps failing (e.g. offline for a while) — one warning is enough.
+let lastCloudErrorToastAt = 0;
 
-function _isCorsError(e) {
-  // Browsers report CORS failures as TypeError with no status info;
-  // a TypeError with "Failed to fetch" (Chromium) or "NetworkError" (Firefox)
-  // on a cross-origin request is almost certainly CORS being blocked.
-  if (e instanceof TypeError && window.location.protocol === 'file:') return true;
-  const msg = (e.message || '').toLowerCase();
-  return e instanceof TypeError && (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('Load failed'));
+// Marker key that flags a record as LZ-String-compressed, so pullFromCloud
+// can tell it apart from an old, pre-compression raw record still sitting
+// in the bin (no migration step needed — first push after loading just
+// overwrites it in the new compressed format).
+const LZ_MARKER = '__lz';
+
+function hasLzString() {
+  return typeof LZString !== 'undefined';
 }
 
-function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+// Wraps the synced fields into a single compressed string field. Cuts the
+// bytes actually sent to/stored on JSONBin — usually 40-70% smaller for the
+// JSON structure/text (player names, settings, theme colors, etc.); base64
+// image data compresses less since it's already dense, but every bit still
+// counts toward the free-tier size limit.
+function buildCloudBody(payload) {
+  if (!hasLzString()) return JSON.stringify(payload); // CDN blocked/offline: fall back to raw JSON
+  const compressed = LZString.compressToBase64(JSON.stringify(payload));
+  return JSON.stringify({ [LZ_MARKER]: true, data: compressed });
+}
+
+// Reverses buildCloudBody. Also transparently reads old, never-compressed
+// records (no __lz marker) so upgrading this file doesn't break existing
+// tournaments already stored in the bin.
+function parseCloudRecord(record) {
+  if (record && record[LZ_MARKER] && hasLzString()) {
+    try {
+      const json = LZString.decompressFromBase64(record.data);
+      return json ? JSON.parse(json) : {};
+    } catch (e) {
+      console.error('[K-Gang] failed to decompress cloud record', e);
+      return {};
+    }
+  }
+  return record || {}; // old uncompressed format, or LZString not loaded
+}
 
 async function pushToCloud() {
-  const payload = JSON.stringify(getSyncPayload());
-  // JSONBin free-tier hard-caps at 100 KB per record; warn early instead of
-  // letting the API reject the request with a cryptic 413/400.
-  if (payload.length > 95000) {
-    console.warn('[K-Gang] cloud payload too large:', payload.length, 'bytes');
-    toast('⚠️ البيانات كبيرة جداً للسحابة — تحقق من صورة الخلفية', 'error');
-    return;
-  }
-
-  for (let attempt = 1; attempt <= CLOUD_MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetch(JSONBIN_BASE, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Access-Key': JSONBIN_KEY },
-        body: payload
-      });
-      if (!res.ok) {
-        const status = res.status;
-        console.error('[K-Gang] cloud PUT returned HTTP', status);
-        // 401/403 = bad key, 429 = rate-limit, 413 = payload too large
-        if (status === 401 || status === 403) {
-          toast('⚠️ مفتاح JSONBin غير صالح (HTTP ' + status + ') — راجع الإعدادات أعلى script.js', 'error');
-          return;
-        }
-        if (status === 413 || status === 400) {
-          toast('⚠️ حجم البيانات أكبر من سعة السحابة — شيل صورة الخلفية أو صغّرها', 'error');
-          return;
-        }
-        // 429 rate-limit or other transient — retry
-        if (attempt < CLOUD_MAX_RETRIES) { await _delay(CLOUD_RETRY_DELAY * attempt); continue; }
-        throw new Error('HTTP ' + status);
-      }
-      const data = await res.json();
-      if (data.metadata && data.metadata.updatedAt) lastSeenUpdatedAt = data.metadata.updatedAt;
-      _cloudRetryCount = 0;
-      return;
-    } catch (e) {
-      console.error('[K-Gang] cloud save attempt ' + attempt + '/' + CLOUD_MAX_RETRIES + ' failed:', e.message || e);
-      if (_isCorsError(e)) {
-        toast('⚠️ تم حجر الاتصال بالسحابة (CORS) — تأكد من فتح الموقع عبر HTTPS', 'error');
-        return;
-      }
-      if (attempt < CLOUD_MAX_RETRIES) { await _delay(CLOUD_RETRY_DELAY * attempt); continue; }
-      _cloudRetryCount++;
-      if (_cloudRetryCount >= 3) {
-        toast('⚠️ تعذّر الاتصال بالسحابة — التعديلات محفوظة محلياً', 'error');
-        _cloudRetryCount = 0;
+  const body = buildCloudBody(getSyncPayload());
+  try {
+    const res = await fetch(JSONBIN_BASE, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Access-Key': JSONBIN_KEY },
+      body
+    });
+    if (!res.ok) {
+      // JSONBin's free tier rejects records past its size limit — this is
+      // the actual cause of "changes aren't syncing" when someone has
+      // uploaded a large background image or the tournament has grown a
+      // lot. Surface that specifically instead of a generic network error.
+      let reason = '';
+      try { reason = (await res.json()).message || ''; } catch (_) {}
+      if (res.status === 400 || res.status === 413 || /size|large|limit/i.test(reason)) {
+        toast('⚠️ بيانات البطولة كبرت عن الحد المسموح للتخزين السحابي المجاني حتى بعد الضغط (~' + Math.round(body.length / 1024) + ' كيلوبايت) — التعديل اتحفظ على جهازك بس ومش هيوصل لباقي الزوار. قلّل حجم صورة الخلفية أو احذف لاعبين مش محتاجهم', 'error');
       } else {
-        toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
+        throw new Error('HTTP ' + res.status);
       }
+      return;
+    }
+    const data = await res.json();
+    if (data.metadata && data.metadata.updatedAt) lastSeenUpdatedAt = data.metadata.updatedAt;
+  } catch (e) {
+    console.error('[K-Gang] cloud save failed', e);
+    const now = Date.now();
+    if (now - lastCloudErrorToastAt > 15000) {
+      lastCloudErrorToastAt = now;
+      toast('⚠️ فشل حفظ التعديلات على السحابة — تحقق من الاتصال', 'error');
     }
   }
 }
@@ -249,34 +237,26 @@ async function pushToCloud() {
 // (including this one from another tab) so all devices converge — with a
 // few seconds of latency instead of Firestore's instant push.
 async function pullFromCloud() {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const res = await fetch(JSONBIN_BASE + '/latest', {
-        headers: { 'X-Access-Key': JSONBIN_KEY }
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json();
-      const updatedAt = data.metadata && data.metadata.updatedAt;
-      if (updatedAt && updatedAt === lastSeenUpdatedAt) return;
-      lastSeenUpdatedAt = updatedAt;
-      isApplyingRemoteUpdate = true;
-      try {
-        const record = data.record || {};
-        SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
-        ensureAnimationsDefaults();
-        buildPlayerMap();
-        saveLocalOnly();
-        renderAll();
-      } finally {
-        isApplyingRemoteUpdate = false;
-      }
-      return;
-    } catch (e) {
-      console.error('[K-Gang] cloud pull attempt ' + attempt + '/3 failed', e);
-      isApplyingRemoteUpdate = false;
-      if (_isCorsError(e)) return;
-      if (attempt < 3) { await _delay(1000 * attempt); continue; }
-    }
+  try {
+    const res = await fetch(JSONBIN_BASE + '/latest', {
+      headers: { 'X-Access-Key': JSONBIN_KEY }
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const updatedAt = data.metadata && data.metadata.updatedAt;
+    if (updatedAt && updatedAt === lastSeenUpdatedAt) return; // nothing new since last check
+    lastSeenUpdatedAt = updatedAt;
+    isApplyingRemoteUpdate = true;
+    const record = parseCloudRecord(data.record);
+    SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
+    ensureAnimationsDefaults();
+    buildPlayerMap();
+    saveLocalOnly();
+    renderAll();
+    isApplyingRemoteUpdate = false;
+  } catch (e) {
+    console.error('[K-Gang] cloud pull failed', e);
+    toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات JSONBin أعلى script.js', 'error');
   }
 }
 
@@ -690,35 +670,79 @@ function updateBgBlur(val) {
 }
 
 // Reads an uploaded image, downsizes it on a canvas, and stores it as a
-// compressed base64 data URL — no server/storage bucket needed. Kept
-// deliberately small: this data URL lives inside the same shared JSONBin
-// record as the rest of the tournament, which has a modest free-tier size
-// limit, so a big, uncompressed image could break syncing for everyone.
+// compressed base64 data URL — no server/storage bucket needed. This data
+// URL lives inside the same shared JSONBin record as the rest of the
+// tournament, which has a modest free-tier size limit, so we compress
+// aggressively (and iteratively) instead of using one fixed quality/size —
+// a single oversized image would break cloud syncing for every visitor,
+// not just the person who uploaded it.
+
+// Target and hard-cap sizes for the final base64 data URL (in characters,
+// which is ~ bytes for base64 text). We try to land under TARGET; if even
+// our smallest/lowest-quality attempt is still above HARD_CAP we refuse to
+// save it rather than silently breaking the shared cloud sync.
+const BG_IMAGE_TARGET_BYTES = 45000;
+const BG_IMAGE_HARD_CAP_BYTES = 90000;
+
+// Prefer WebP when the browser can actually encode it (not just decode) —
+// it's noticeably smaller than JPEG at the same visual quality. Falls back
+// to JPEG automatically for older browsers.
+function supportsWebpEncoding() {
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = 1;
+    return c.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+  } catch (e) { return false; }
+}
+
+// Tries progressively smaller dimensions and lower quality until the
+// resulting data URL fits under BG_IMAGE_TARGET_BYTES, returning the best
+// (smallest-that-still-looks-decent) result it finds. Returns null only if
+// nothing it tried gets under the hard cap.
+function compressImageToDataUrl(img) {
+  const mime = supportsWebpEncoding() ? 'image/webp' : 'image/jpeg';
+  const widths = [900, 700, 500, 360];
+  const qualities = [0.7, 0.55, 0.4, 0.28];
+  let best = null;
+  for (const maxW of widths) {
+    const scale = Math.min(1, maxW / img.width);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    for (const q of qualities) {
+      const dataUrl = canvas.toDataURL(mime, q);
+      if (!best || dataUrl.length < best.length) best = dataUrl;
+      if (dataUrl.length <= BG_IMAGE_TARGET_BYTES) return dataUrl; // good enough, stop early
+    }
+  }
+  // Nothing hit the target — return the smallest attempt if it at least
+  // clears the hard cap, otherwise signal failure.
+  return best && best.length <= BG_IMAGE_HARD_CAP_BYTES ? best : null;
+}
+
 function handleBgImageUpload(event) {
   const file = event.target.files && event.target.files[0];
+  event.target.value = ''; // allow re-selecting the same file later
   if (!file) return;
   if (!file.type.startsWith('image/')) { toast('لازم تختار ملف صورة', 'error'); return; }
   const reader = new FileReader();
   reader.onload = function() {
     const img = new Image();
     img.onload = function() {
-      const maxW = 900;
-      const scale = Math.min(1, maxW / img.width);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+      const dataUrl = compressImageToDataUrl(img);
+      if (!dataUrl) {
+        toast('⚠️ الصورة كبيرة جداً حتى بعد الضغط — جرّب صورة تانية أبسط، أو حط رابط صورة (URL) بدل الرفع عشان محدش يفقد مزامنة السحابة', 'error');
+        return;
+      }
       state.theme.background.imageUrl = dataUrl;
       applyThemeBackground(state.theme.background);
       renderThemeTab();
       saveState();
-      if (dataUrl.length > 70000) {
-        toast('⚠️ الصورة كبيرة نسبياً — ممكن متتزامنش مع باقي الزوار عبر السحابة. لو حابب كل الزوار يشوفوها، حط رابط صورة (URL) بدل الرفع', 'error');
-      } else {
-        toast('تم رفع الخلفية');
-      }
+      const kb = Math.round(dataUrl.length / 1024);
+      toast('تم رفع الخلفية وضغطها (~' + kb + ' كيلوبايت)');
     };
     img.onerror = function() { toast('تعذّر قراءة الصورة', 'error'); };
     img.src = reader.result;

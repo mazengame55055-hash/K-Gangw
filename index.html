@@ -500,6 +500,12 @@
     <span>Powered by Valorant</span>
   </footer>
 
+  <!-- LZ-String — tiny, dependency-free text compression used to shrink the
+       whole synced payload (players/matches/settings/theme) before it's
+       sent to JSONBin, so we stay under the free-tier size limit even with
+       a lot of players or a background image. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+
   <!-- JSONBin.io — shared cloud storage so all visitors see the same data.
        Plain fetch() calls in script.js, no external SDK needed. -->
   <script src="script.js"></script>
