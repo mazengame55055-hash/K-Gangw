@@ -1134,7 +1134,7 @@ function renderBracket() {
         ? '<img class="slot-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'">'
         : '') +
       '<div class="slot-info">' +
-        '<span class="slot-name">' + (p ? escapeHtml(p.name) : '—') + (match.isBye ? ' <span class="bye-tag">BYE</span>' : '') + '</span>' +
+        '<span class="slot-name-row"><span class="slot-name">' + (p ? escapeHtml(p.name) : '—') + '</span>' + (match.isBye ? '<span class="bye-tag">BYE</span>' : '') + '</span>' +
         (p && p.discordId ? '<span class="slot-id">' + escapeHtml(p.discordId) + '</span>' : '') +
       '</div>' +
       '</div>';

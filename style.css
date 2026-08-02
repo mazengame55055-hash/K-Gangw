@@ -1486,10 +1486,13 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 }
 
 /* First slot sits on the visual left of the row — its content hugs the
-   center (next to the vs label): avatar closest to center, name outermost. */
+   center (next to the vs label): avatar closest to center, name outermost.
+   Note: with flex-direction row-reverse, main-start is the PHYSICAL RIGHT
+   edge (the side facing the vs label) — so flex-start, not flex-end, is
+   what pushes the content there. */
 .match-card > .match-slot.slot-a {
   flex-direction: row-reverse;
-  justify-content: flex-end;
+  justify-content: flex-start;
   text-align: right;
 }
 
@@ -1530,7 +1533,18 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
   gap: 1px;
 }
 
+.slot-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.match-card > .match-slot.slot-a .slot-name-row { flex-direction: row-reverse; }
+
 .slot-name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
@@ -1570,6 +1584,7 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 }
 
 .bye-tag {
+  flex-shrink: 0;
   display: inline-block;
   font-size: 8px;
   font-weight: 700;
@@ -1578,12 +1593,11 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
   background: var(--bg-deep);
   padding: 1px 6px;
   border-radius: 3px;
-  margin-left: 4px;
   vertical-align: middle;
 }
 
 .match-card.match-bye {
-  border-style: dashed;
+  background: repeating-linear-gradient(135deg, transparent, transparent 6px, var(--bg-surface) 6px, var(--bg-surface) 7px);
   opacity: 0.85;
 }
 
