@@ -42,6 +42,14 @@ const state = {
     colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' },
     font: 'rajdhani_inter',
     background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 },
+    // Team logo image (compressed data URL) shown in the header, hero crest
+    // and the exported bracket image. Empty string = the default K hexagon.
+    logo: '',
+    // Per-preset thumbnail overrides uploaded from the admin panel
+    // ({ presetId: compressed data URL }) — shown in the theme list, synced
+    // to every visitor like the rest of `theme`. Missing ids fall back to
+    // THEME_PRESETS[id].image, then to a generated emblem.
+    themeImages: {},
     // Shape used to frame every player avatar site-wide (match slots, the
     // admin players list, the champion modal) AND in the exported
     // image/PDF, so both always look identical. One of: circle | hexagon | square.
@@ -360,15 +368,38 @@ function toast(msg, type) {
 // hover shades, secondary/muted text, glows) is derived from these at
 // apply-time, so a theme change (preset OR a manually-picked color)
 // consistently recolors the whole site instead of leaving mismatched bits.
+// صورة كل تيم في القايمة: لو حطيت رابط صورة (https://... أو data:image/...)
+// في حقل `image` هتظهر دي كصورة الثيم في قايمة التيمات، ولو سيبته فاضي
+// ('' ) هيظهر لون التيم التدرجي. غيّر الروابط من هنا في ملف script.js وخلاص.
 const THEME_PRESETS = {
-  kgang:     { label: 'K-Gang الأصلي',   colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' } },
-  cyberpunk: { label: 'سايبربانك',       colors: { primary: '#ff2e9a', textPrimary: '#f2f0ff', bgDeep: '#08060f', bgSurface: '#160f22' } },
-  crimson:   { label: 'قرمزي',            colors: { primary: '#e5484d', textPrimary: '#f5e8e8', bgDeep: '#120808', bgSurface: '#1f1010' } },
-  emerald:   { label: 'زمردي',            colors: { primary: '#3ecf8e', textPrimary: '#e6f5ee', bgDeep: '#07120d', bgSurface: '#10201a' } },
-  ocean:     { label: 'محيطي',            colors: { primary: '#4fa3f7', textPrimary: '#e8f0fa', bgDeep: '#070d16', bgSurface: '#0f1c2e' } },
-  sunset:    { label: 'غروب',             colors: { primary: '#f2a154', textPrimary: '#f7ecdf', bgDeep: '#140d07', bgSurface: '#241708' } },
-  frost:     { label: 'فاتح (Frost)',     colors: { primary: '#6e5fa8', textPrimary: '#1c1826', bgDeep: '#f5f3fb', bgSurface: '#ffffff' } }
+  kgang:     { label: 'K-Gang الأصلي',   colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' }, image: '' },
+  cyberpunk: { label: 'سايبربانك',       colors: { primary: '#ff2e9a', textPrimary: '#f2f0ff', bgDeep: '#08060f', bgSurface: '#160f22' }, image: '' },
+  crimson:   { label: 'قرمزي',            colors: { primary: '#e5484d', textPrimary: '#f5e8e8', bgDeep: '#120808', bgSurface: '#1f1010' }, image: '' },
+  emerald:   { label: 'زمردي',            colors: { primary: '#3ecf8e', textPrimary: '#e6f5ee', bgDeep: '#07120d', bgSurface: '#10201a' }, image: '' },
+  ocean:     { label: 'محيطي',            colors: { primary: '#4fa3f7', textPrimary: '#e8f0fa', bgDeep: '#070d16', bgSurface: '#0f1c2e' }, image: '' },
+  sunset:    { label: 'غروب',             colors: { primary: '#f2a154', textPrimary: '#f7ecdf', bgDeep: '#140d07', bgSurface: '#241708' }, image: '' },
+  frost:     { label: 'فاتح (Frost)',     colors: { primary: '#6e5fa8', textPrimary: '#1c1826', bgDeep: '#f5f3fb', bgSurface: '#ffffff' }, image: '' }
 };
+
+// Letter shown inside each preset's generated emblem (theme-list thumbnail).
+const PRESET_LETTERS = { kgang: 'K', cyberpunk: 'C', crimson: 'C', emerald: 'E', ocean: 'O', sunset: 'S', frost: 'F' };
+
+// Generates a small hexagon emblem data URI in the preset's own colors —
+// used as the theme-list thumbnail whenever a preset has no `image` URL
+// configured, so every theme shows a distinct picture right away. Quotes
+// are percent-encoded so the data URI stays safe inside HTML attributes.
+function themeEmblem(colors, letter) {
+  const enc = s => String(s).replace(/#/g, '%23');
+  const primary = enc(colors.primary);
+  const light = enc(mixHex(colors.primary, '#ffffff', 0.5));
+  const dark = enc(mixHex(colors.primary, '#000000', 0.4));
+  return 'data:image/svg+xml,' +
+    '%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2760%27 height=%2760%27%3E' +
+    '%3Cpolygon points=%2730,3 54,16 54,44 30,57 6,44 6,16%27 fill=%27' + dark + '%27/%3E' +
+    '%3Cpolygon points=%2730,8 50,19 50,41 30,52 10,41 10,19%27 fill=%27' + primary + '%27/%3E' +
+    '%3Cpolygon points=%2730,15 44,23 44,37 30,45 16,37 16,23%27 fill=%27' + light + '%27 opacity=%270.85%27/%3E' +
+    '%3Ctext x=%2730%27 y=%2739%27 text-anchor=%27middle%27 fill=%27%23ffffff%27 font-size=%2724%27 font-weight=%27700%27 font-family=%27Rajdhani, Tahoma, sans-serif%27%3E' + encodeURIComponent(letter || 'K') + '%3C/text%3E%3C/svg%3E';
+}
 
 const FONT_PAIRS = {
   rajdhani_inter: { label: 'الافتراضي — Rajdhani', display: 'Rajdhani', body: 'Inter', mono: 'JetBrains Mono', google: 'family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500' },
@@ -513,8 +544,38 @@ function applyThemeFull() {
   applyThemeColors(state.theme.colors);
   applyThemeFont(state.theme.font);
   applyThemeBackground(state.theme.background);
+  applyThemeLogo();
   applyAvatarShape(state.theme.avatarShape);
   applyAnimations(state.theme.animations);
+}
+
+// Swaps the default K hexagon SVGs (header, hero crest, hero watermark) for
+// the admin-uploaded team logo whenever one is set, and restores them when
+// it's removed. Runs for every visitor so the logo stays in sync with the
+// rest of the shared theme.
+function applyThemeLogo() {
+  const logo = (state.theme && state.theme.logo) || '';
+  const safe = sanitizeBgImageUrl(logo);
+  ['.logo-icon', '.hero-crest-icon', '.hero-crest-logo'].forEach(sel => {
+    const box = document.querySelector(sel);
+    if (!box) return;
+    let img = box.querySelector('img.team-logo-img');
+    const svg = box.querySelector('svg');
+    if (safe) {
+      if (!img) {
+        img = document.createElement('img');
+        img.className = 'team-logo-img';
+        img.alt = '';
+        box.insertBefore(img, box.firstChild);
+      }
+      img.src = safe;
+      img.style.display = '';
+      if (svg) svg.style.display = 'none';
+    } else {
+      if (img) img.remove();
+      if (svg) svg.style.display = '';
+    }
+  });
 }
 
 // Backfills `theme.animations` and `theme.avatarShape` for states
@@ -595,14 +656,20 @@ function renderThemeTab() {
     const p = THEME_PRESETS[id];
     const active = state.theme.preset === id;
     // Big live preview shaped like the player avatar (same shape classes the
-    // rest of the site uses), colored with the preset's own primary tones so
-    // each swatch already shows its theme at a glance.
+    // rest of the site uses).
     const shape = state.theme.avatarShape || 'circle';
-    const primary = p.colors.primary;
-    const primaryLight = mixHex(primary, '#ffffff', 0.82);
+    // Preset thumbnail: an admin-uploaded override (state.theme.themeImages)
+    // wins, then an explicit `image` URL from THEME_PRESETS, then a generated
+    // emblem in the preset's own colors. `&quot;` is used because this style
+    // lives inside a double-quoted HTML attribute and the URL has no raw `"`
+    // (sanitized / percent-encoded).
+    const over = (state.theme.themeImages || {})[id];
+    const imgUrl = over || (p.image ? sanitizeBgImageUrl(p.image) : '');
+    const previewUrl = imgUrl || themeEmblem(p.colors, PRESET_LETTERS[id]);
+    const previewStyle = 'background-image:url(&quot;' + previewUrl + '&quot;);background-size:cover;background-position:center;';
     return '<button type="button" class="theme-swatch' + (active ? ' active' : '') + '" onclick="selectThemePreset(\'' + id + '\')">' +
       '<span class="theme-swatch-check">✓</span>' +
-      '<span class="theme-swatch-preview theme-swatch-preview-' + shape + '" style="background:linear-gradient(135deg,' + primary + ',' + primaryLight + ' 55%,' + primary + ')"></span>' +
+      '<span class="theme-swatch-preview theme-swatch-preview-' + shape + '" style="' + previewStyle + '"></span>' +
       '<span class="theme-swatch-label">' + escapeHtml(p.label) + '</span>' +
       '</button>';
   }).join('');
@@ -646,6 +713,103 @@ function renderThemeTab() {
 
   const shape = state.theme.avatarShape || 'circle';
   $$('.avatar-shape-option').forEach(b => b.classList.toggle('active', b.dataset.shape === shape));
+
+  const logo = (state.theme.logo || '') && sanitizeBgImageUrl(state.theme.logo);
+  const logoPreview = $('#teamLogoPreview');
+  if (logoPreview) {
+    if (logo) {
+      logoPreview.style.backgroundImage = 'url("' + logo + '")';
+      logoPreview.classList.add('show');
+    } else {
+      logoPreview.style.backgroundImage = '';
+      logoPreview.classList.remove('show');
+    }
+  }
+  const removeLogoBtn = $('#removeLogoBtn');
+  if (removeLogoBtn) removeLogoBtn.style.display = logo ? '' : 'none';
+
+  // "صورة التيم" section — shows the active preset's thumbnail and lets the
+  // admin upload a custom one (see handleThemeImageUpload/removeThemeImage).
+  const thImg = $('#themeImagePreview');
+  const thUrl = activeThemeImageUrl();
+  if (thImg) {
+    if (thUrl) {
+      thImg.style.backgroundImage = 'url("' + thUrl + '")';
+      thImg.classList.add('show');
+    } else {
+      thImg.style.backgroundImage = '';
+      thImg.classList.remove('show');
+    }
+  }
+  const thHint = $('#themeImageHint');
+  if (thHint) {
+    const pid = state.theme.preset;
+    thHint.textContent = pid === 'custom'
+      ? 'التيم المخصص ملوش صورة مستقلة — اختار تيم جاهز من القايمة الأول.'
+      : 'التيم الحالي: ' + (THEME_PRESETS[pid] ? THEME_PRESETS[pid].label : pid) + ' — الصورة بتظهر في القايمة فوراً وبتتزامن لكل الزوار.';
+  }
+  const thRemove = $('#removeThemeImageBtn');
+  if (thRemove) {
+    thRemove.style.display = (state.theme.themeImages || {})[state.theme.preset] ? '' : 'none';
+  }
+}
+
+// The currently-active theme's thumbnail: uploaded override → preset `image`
+// URL → generated emblem. Returns '' only for an unknown/custom preset.
+function activeThemeImageUrl() {
+  const id = state.theme.preset;
+  const over = (state.theme.themeImages || {})[id];
+  if (over) return sanitizeBgImageUrl(over);
+  const p = THEME_PRESETS[id];
+  if (!p) return '';
+  if (p.image) return sanitizeBgImageUrl(p.image);
+  return themeEmblem(p.colors, PRESET_LETTERS[id]);
+}
+
+// Reads an uploaded image, compresses it like the team logo (keeps the cloud
+// record small), and stores it as the ACTIVE preset's thumbnail override.
+function handleThemeImageUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('لازم تختار ملف صورة', 'error'); return; }
+  if (state.theme.preset === 'custom') {
+    toast('التيم المخصص ملوش صورة مستقلة — اختار تيم جاهز من القايمة الأول', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function() {
+    const img = new Image();
+    img.onload = function() {
+      const dataUrl = compressLogoToDataUrl(img);
+      if (!dataUrl) {
+        toast('⚠️ الصورة كبيرة جداً حتى بعد الضغط — جرّب صورة أصغر', 'error');
+        return;
+      }
+      state.theme.themeImages = Object.assign({}, state.theme.themeImages || {});
+      state.theme.themeImages[state.theme.preset] = dataUrl;
+      renderThemeTab();
+      saveState();
+      const label = THEME_PRESETS[state.theme.preset] ? THEME_PRESETS[state.theme.preset].label : state.theme.preset;
+      toast('تم تغيير صورة التيم "' + label + '"');
+    };
+    img.onerror = function() { toast('تعذّر قراءة الصورة', 'error'); };
+    img.src = reader.result;
+  };
+  reader.onerror = function() { toast('تعذّر قراءة الملف', 'error'); };
+  reader.readAsDataURL(file);
+}
+
+// Removes the active preset's uploaded thumbnail → falls back to the preset
+// `image` URL / generated emblem.
+function removeThemeImage() {
+  const pid = state.theme.preset;
+  if (pid === 'custom' || !(state.theme.themeImages || {})[pid]) return;
+  state.theme.themeImages = Object.assign({}, state.theme.themeImages);
+  delete state.theme.themeImages[pid];
+  renderThemeTab();
+  saveState();
+  toast('تم حذف صورة التيم — رجعت للصورة الافتراضية');
 }
 
 // Switches the site-wide (and export) avatar frame between circle / hexagon
@@ -805,12 +969,84 @@ function handleBgImageUpload(event) {
   reader.readAsDataURL(file);
 }
 
+// Team logo compression — logos are small, so we keep more quality than the
+// background image path and always use WebP/PNG (never JPEG) to preserve
+// transparency. Stored as a compact data URL inside the shared theme record.
+const LOGO_TARGET_BYTES = 20000;
+const LOGO_HARD_CAP_BYTES = 45000;
+
+function compressLogoToDataUrl(img) {
+  const mime = supportsWebpEncoding() ? 'image/webp' : 'image/png';
+  const widths = [280, 220, 170, 130];
+  const qualities = [0.9, 0.75, 0.6];
+  let best = null;
+  for (const maxW of widths) {
+    const scale = Math.min(1, maxW / img.width);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    if (mime === 'image/png') {
+      const dataUrl = canvas.toDataURL(mime);
+      if (!best || dataUrl.length < best.length) best = dataUrl;
+      if (dataUrl.length <= LOGO_TARGET_BYTES) return dataUrl;
+    } else {
+      for (const q of qualities) {
+        const dataUrl = canvas.toDataURL(mime, q);
+        if (!best || dataUrl.length < best.length) best = dataUrl;
+        if (dataUrl.length <= LOGO_TARGET_BYTES) return dataUrl;
+      }
+    }
+  }
+  return best && best.length <= LOGO_HARD_CAP_BYTES ? best : null;
+}
+
+function handleLogoUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('لازم تختار ملف صورة', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = function() {
+    const img = new Image();
+    img.onload = function() {
+      const dataUrl = compressLogoToDataUrl(img);
+      if (!dataUrl) {
+        toast('⚠️ الشعار كبير جداً حتى بعد الضغط — جرّب صورة أصغر (يفضل PNG بشفافية)', 'error');
+        return;
+      }
+      state.theme.logo = dataUrl;
+      applyThemeLogo();
+      renderThemeTab();
+      saveState();
+      const kb = Math.round(dataUrl.length / 1024);
+      toast('تم تغيير شعار الفريق (~' + kb + ' كيلوبايت)');
+    };
+    img.onerror = function() { toast('تعذّر قراءة الصورة', 'error'); };
+    img.src = reader.result;
+  };
+  reader.onerror = function() { toast('تعذّر قراءة الملف', 'error'); };
+  reader.readAsDataURL(file);
+}
+
+function removeTeamLogo() {
+  state.theme.logo = '';
+  applyThemeLogo();
+  renderThemeTab();
+  saveState();
+  toast('تم حذف شعار الفريق');
+}
+
 function resetTheme() {
   state.theme = {
     preset: 'kgang',
     colors: Object.assign({}, THEME_PRESETS.kgang.colors),
     font: 'rajdhani_inter',
     background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 },
+    logo: '',
+    themeImages: {},
     avatarShape: 'circle',
     animations: Object.assign({}, DEFAULT_ANIMATIONS)
   };
@@ -1704,6 +1940,22 @@ async function buildBracketExportCanvas() {
   ctx.scale(scale, scale);
 
   await drawExportBackground(ctx, cssW, cssH, colors);
+
+  // Team logo — the admin-uploaded crest drawn centered above the title,
+  // matching the hero layout on the page. Skipped when no logo is set.
+  const teamLogoUrl = sanitizeBgImageUrl((state.theme && state.theme.logo) || '');
+  if (teamLogoUrl) {
+    try {
+      const logoImg = await loadAvatarSafely(teamLogoUrl);
+      if (logoImg && logoImg.width > 0) {
+        const logoH = 20;
+        const logoW = logoImg.width > logoImg.height
+          ? logoH * (logoImg.width / logoImg.height)
+          : logoH;
+        ctx.drawImage(logoImg, cssW / 2 - logoW / 2, topPad - 14 - logoH - 12, logoW, logoH);
+      }
+    } catch (e) { /* logo is decorative — never fail the whole export for it */ }
+  }
 
   // Title — tournament name, centered above the grid like the page header.
   ctx.textAlign = 'center';

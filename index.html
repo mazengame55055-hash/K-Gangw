@@ -7,7 +7,7 @@
   <meta name="description" content="مخطط بطولات K-Gang التفاعلي — أضف اللاعبين، أنشئ القرعة، وتابع النتائج لحظة بلحظة.">
   <meta name="theme-color" content="#0d0c12">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpolygon points='20,2 38,12 38,28 20,38 2,28 2,12' fill='%239184c9'/%3E%3Cpolygon points='20,8 32,15 32,25 20,32 8,25 8,15' fill='%230d0c12'/%3E%3Ctext x='20' y='23' text-anchor='middle' fill='%239184c9' font-size='14' font-weight='bold' font-family='sans-serif'%3EK%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20260802f">
+  <link rel="stylesheet" href="style.css?v=20260802j">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Cairo:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
@@ -220,6 +220,20 @@
         </div>
 
         <div class="theme-section">
+          <div class="theme-section-title">صورة التيم</div>
+          <p class="theme-section-desc">اختر تيم من القايمة فوق وبعدين ارفع صورة ليها — بتظهر في القايمة فوراً وبتتزامن لكل الزوار.</p>
+          <div class="logo-upload-row">
+            <div class="logo-preview" id="themeImagePreview"></div>
+            <div class="logo-upload-actions">
+              <button type="button" class="bg-upload-btn" onclick="$('#themeImageFile').click()">رفع صورة التيم</button>
+              <button type="button" class="btn-danger-small" id="removeThemeImageBtn" onclick="removeThemeImage()" style="display:none">حذف الصورة</button>
+              <input type="file" id="themeImageFile" accept="image/*" style="display:none" onchange="handleThemeImageUpload(event)">
+              <p class="logo-upload-hint" id="themeImageHint"></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="theme-section">
           <div class="theme-section-title">ألوان مخصصة</div>
           <p class="theme-section-desc">عدّل أي لون يدوياً — باقي الألوان (الحدود، الظلال، درجات النص) بتتولّد تلقائياً منها.</p>
           <div class="color-picker-grid">
@@ -261,6 +275,20 @@
               <span class="shape-preview shape-preview-square"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Crect fill='%231f1c27' width='60' height='60'/%3E%3Ctext x='30' y='40' text-anchor='middle' fill='%239184c9' font-size='24' font-weight='700' font-family='Rajdhani'%3EK%3C/text%3E%3C/svg%3E" alt=""></span>
               <span class="theme-swatch-label">مربع دائري الحواف</span>
             </button>
+          </div>
+        </div>
+
+        <div class="theme-section">
+          <div class="theme-section-title">شعار الفريق</div>
+          <p class="theme-section-desc">لوجو بيظهر في هيدر الموقع، وجوه بطاقة البطولة، وعلى الصورة المُصدَّرة من المخطط.</p>
+          <div class="logo-upload-row">
+            <div class="logo-preview" id="teamLogoPreview"></div>
+            <div class="logo-upload-actions">
+              <button type="button" class="bg-upload-btn" onclick="$('#teamLogoFile').click()">رفع شعار</button>
+              <button type="button" class="btn-danger-small" id="removeLogoBtn" onclick="removeTeamLogo()" style="display:none">حذف الشعار</button>
+              <input type="file" id="teamLogoFile" accept="image/*" style="display:none" onchange="handleLogoUpload(event)">
+              <p class="logo-upload-hint">يفضل PNG بشفافية. بيتضغط تلقائياً عشان مزامنة السحابة.</p>
+            </div>
           </div>
         </div>
 
@@ -531,6 +559,6 @@
 
   <!-- JSONBin.io — shared cloud storage so all visitors see the same data.
        Plain fetch() calls in script.js, no external SDK needed. -->
-  <script src="script.js?v=20260802f"></script>
+  <script src="script.js?v=20260802j"></script>
 </body>
 </html>
