@@ -1121,15 +1121,15 @@ function renderBracket() {
   else if (maxR === 2) { nameMap[1] = 'نصف النهائي'; }
 
   function slotHtml(match, playerId, isFirst) {
+    const sideClass = isFirst ? 'slot-a' : 'slot-b';
     if (playerId == null) {
       const waitingText = match.isBye ? 'باي (تأهل تلقائي)' : 'بانتظار المتأهل';
-      return '<div class="match-slot empty' + (match.isBye ? ' bye-indicator' : '') + '"><span class="slot-name" style="padding-left:20px">' + waitingText + '</span></div>';
+      return '<div class="match-slot ' + sideClass + ' empty' + (match.isBye ? ' bye-indicator' : '') + '"><span class="slot-name">' + waitingText + '</span></div>';
     }
     const p = getPlayer(playerId);
     const iw = match.winnerId === playerId;
-    const isByeSlot = match.isBye && ((isFirst && !match.player2Id) || (!isFirst && !match.player1Id));
     const locked = state.isLocked ? ' locked' : '';
-    return '<div class="match-slot' + (iw ? ' winner' : '') + locked + '" data-match="' + match.id + '" data-player="' + playerId + '">' +
+    return '<div class="match-slot ' + sideClass + (iw ? ' winner' : '') + locked + '" data-match="' + match.id + '" data-player="' + playerId + '">' +
       (p
         ? '<img class="slot-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'">'
         : '') +
@@ -1155,6 +1155,7 @@ function renderBracket() {
       const byeClass = match.isBye ? ' match-bye' : '';
       html += '<div class="match-card' + (hw ? ' has-winner' : '') + byeClass + '">';
       html += slotHtml(match, match.player1Id, true);
+      html += '<span class="vs-label">VS</span>';
       html += slotHtml(match, match.player2Id, false);
       html += '</div>';
     });

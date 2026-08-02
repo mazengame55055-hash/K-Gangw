@@ -1417,16 +1417,26 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
   position: relative;
 }
 
-/* Match Card */
+/* Match Card — a single horizontal row: name + avatar, "vs", avatar + name.
+   No box/border by default (matches the reference layout); rows within a
+   round are separated by a thin divider instead of being boxed. */
 .match-card {
   position: relative;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow: visible;
   transition: var(--transition);
-  margin: 4px 0;
+  margin: 0;
+  padding: 10px 6px;
   animation: fade-match 0.4s ease both;
+}
+
+.match-card:not(:last-child) {
+  border-bottom: 1px dashed var(--border);
 }
 
 @keyframes fade-match {
@@ -1435,60 +1445,72 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 }
 
 .match-card:hover {
-  border-color: var(--border-light);
   background: var(--bg-card-hover);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .match-card.has-winner {
-  border-color: rgba(145, 132, 201, 0.35);
-  box-shadow: 0 0 20px rgba(145, 132, 201, 0.1);
-}
-
-.match-card.has-winner .match-slot.winner {
   background: var(--win-bg);
-  border-color: rgba(255, 215, 0, 0.3);
 }
 
 .match-card.has-winner .match-slot.winner .slot-name {
   color: #ffd700;
 }
 
-.match-card .match-slot.winner::before {
-  content: '★';
-  position: absolute;
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
+.vs-label {
+  flex-shrink: 0;
+  font-family: var(--font-display);
   font-size: 10px;
-  color: #ffd700;
-  opacity: 0.8;
-  text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.match-card.has-winner .vs-label {
+  color: var(--primary-light);
 }
 
 .match-slot {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 8px 20px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-md);
   transition: var(--transition);
-  min-height: 40px;
-  border-bottom: 1px solid var(--border);
+  min-height: 36px;
+  border-bottom: none;
   position: relative;
+}
+
+/* First slot sits on the visual left of the row — its content hugs the
+   center (next to the vs label): avatar closest to center, name outermost. */
+.match-card > .match-slot.slot-a {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+/* Second slot sits on the visual right — avatar closest to center, name
+   outermost, same as the default DOM order (avatar, then name). */
+.match-card > .match-slot.slot-b {
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .match-slot:not(.empty):not(.locked) { cursor: pointer; }
 .match-slot.locked { cursor: default; }
 .match-slot.locked:hover { background: transparent; }
-.match-slot:last-child { border-bottom: none; }
 
 .match-slot:not(.empty):not(.locked):hover { background: var(--bg-surface-hover); }
 
 .match-slot:active { background: var(--primary-subtle); }
 
 .match-slot .slot-avatar {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -1502,7 +1524,6 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 }
 
 .slot-info {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1535,16 +1556,6 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 
 .match-slot.empty {
   opacity: 0.35;
-}
-
-.match-slot.locked:not(.empty)::after {
-  content: '🔒';
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 10px;
-  opacity: 0.3;
 }
 
 .match-slot.bye-indicator {
@@ -1998,8 +2009,10 @@ body.anim-winner-flip .match-card { perspective: 900px; }
 
   .bracket-grid { padding: 16px; }
   .round-column { min-width: 140px; padding: 0 4px; }
-  .match-slot { padding: 6px 8px 6px 16px; min-height: 36px; }
+  .match-card { padding: 8px 4px; gap: 4px; }
+  .match-slot { padding: 4px; min-height: 32px; gap: 6px; }
   .slot-name { font-size: 11px; }
+  .vs-label { font-size: 9px; }
   .match-slot .slot-avatar,
   .match-slot .slot-avatar.default { width: 22px; height: 22px; font-size: 9px; }
 
