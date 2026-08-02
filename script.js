@@ -284,6 +284,21 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// Single source of truth for round labels ("نصف النهائي", "ربع النهائي"...),
+// used by the live bracket, the admin match-controls list, and the image/PDF
+// export. Previously this map was duplicated in three places and had
+// drifted out of sync (only the export version knew about 16/32-player
+// brackets) — building it once here keeps all three views consistent.
+function buildRoundNameMap(rounds) {
+  const maxR = Math.max(...rounds);
+  const nameMap = { [maxR]: 'النهائي' };
+  if (maxR === 5) { nameMap[1] = 'دور الـ32'; nameMap[2] = 'ثمن النهائي'; nameMap[3] = 'ربع النهائي'; nameMap[4] = 'نصف النهائي'; }
+  else if (maxR === 4) { nameMap[1] = 'ثمن النهائي'; nameMap[2] = 'ربع النهائي'; nameMap[3] = 'نصف النهائي'; }
+  else if (maxR === 3) { nameMap[1] = 'ربع النهائي'; nameMap[2] = 'نصف النهائي'; }
+  else if (maxR === 2) { nameMap[1] = 'نصف النهائي'; }
+  return nameMap;
+}
+
 // Escapes a value for safe use inside an HTML attribute (quotes included).
 // escapeHtml() alone does NOT escape quote characters, so it is not safe
 // for attribute contexts like src="...".
@@ -1113,12 +1128,7 @@ function renderBracket() {
 
   const rounds = [...new Set(state.matches.map(m => m.round))].sort((a, b) => a - b);
   grid.classList.toggle('paused', state.tournamentPaused);
-  const maxR = Math.max(...rounds);
-
-  const nameMap = {};
-  nameMap[maxR] = 'النهائي';
-  if (maxR === 3) { nameMap[1] = 'ربع النهائي'; nameMap[2] = 'نصف النهائي'; }
-  else if (maxR === 2) { nameMap[1] = 'نصف النهائي'; }
+  const nameMap = buildRoundNameMap(rounds);
 
   function slotHtml(match, playerId, isFirst) {
     const sideClass = isFirst ? 'slot-a' : 'slot-b';
@@ -1230,11 +1240,7 @@ function renderMatchControls() {
   html += '</div>';
 
   const rounds = [...new Set(state.matches.map(m => m.round))].sort((a, b) => a - b);
-  const maxR = Math.max(...rounds);
-  const nameMap = {};
-  nameMap[maxR] = 'النهائي';
-  if (maxR === 3) { nameMap[1] = 'ربع النهائي'; nameMap[2] = 'نصف النهائي'; }
-  else if (maxR === 2) { nameMap[1] = 'نصف النهائي'; }
+  const nameMap = buildRoundNameMap(rounds);
 
   rounds.forEach(round => {
     const matches = state.matches.filter(m => m.round === round).sort((a, b) => a.position - b.position);
@@ -1507,13 +1513,7 @@ async function buildBracketExportCanvas() {
   };
 
   const rounds = [...new Set(state.matches.map(m => m.round))].sort((a, b) => a - b);
-  const maxR = Math.max(...rounds);
-  const nameMap = {};
-  nameMap[maxR] = 'النهائي';
-  if (maxR === 5) { nameMap[1] = 'دور الـ32'; nameMap[2] = 'ثمن النهائي'; nameMap[3] = 'ربع النهائي'; nameMap[4] = 'نصف النهائي'; }
-  else if (maxR === 4) { nameMap[1] = 'ثمن النهائي'; nameMap[2] = 'ربع النهائي'; nameMap[3] = 'نصف النهائي'; }
-  else if (maxR === 3) { nameMap[1] = 'ربع النهائي'; nameMap[2] = 'نصف النهائي'; }
-  else if (maxR === 2) { nameMap[1] = 'نصف النهائي'; }
+  const nameMap = buildRoundNameMap(rounds);
   const matchesByRound = rounds.map(r => state.matches.filter(m => m.round === r).sort((a, b) => a.position - b.position));
 
   const scale = 2;
