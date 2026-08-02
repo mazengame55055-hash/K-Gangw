@@ -1391,16 +1391,22 @@ function roundRectPath(ctx, x, y, w, h, r) {
 }
 
 const EXPORT_FONT_STACK = "'Rajdhani', Tahoma, Arial, sans-serif";
+const EXPORT_NAME_FONT = "600 12px " + EXPORT_FONT_STACK;
+const EXPORT_ID_FONT = "400 9px 'JetBrains Mono', monospace";
+const EXPORT_PLACEHOLDER_FONT = "italic 10px " + EXPORT_FONT_STACK;
+const EXPORT_AVATAR_R = 13;
+const EXPORT_SLOT_PAD = 8;
+const EXPORT_NAME_GAP = 8;
 
 function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, side) {
-  const avatarR = 13;
+  const avatarR = EXPORT_AVATAR_R;
   const cyMid = y + h / 2;
-  const pad = 8;
+  const pad = EXPORT_SLOT_PAD;
   const align = side === 'a' ? 'right' : 'left';
 
   if (playerId == null) {
     ctx.fillStyle = colors.textMuted;
-    ctx.font = "italic 10px " + EXPORT_FONT_STACK;
+    ctx.font = EXPORT_PLACEHOLDER_FONT;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     const tx = side === 'a' ? x + w - pad : x + pad;
@@ -1444,21 +1450,41 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
 
   // Name (and discord id, if set) sit on the outer side of the avatar,
   // away from the "vs" gap — mirrors the on-page slot-info stack.
-  const textX = side === 'a' ? cx - avatarR - 8 : cx + avatarR + 8;
+  const textX = side === 'a' ? cx - avatarR - EXPORT_NAME_GAP : cx + avatarR + EXPORT_NAME_GAP;
   const maxTextW = side === 'a' ? (textX - (x + pad)) : ((x + w - pad) - textX);
   const hasId = !!(p && p.discordId);
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = isWinner ? '#ffd700' : colors.textSecondary;
-  ctx.font = (isWinner ? '600' : '500') + ' 12px ' + EXPORT_FONT_STACK;
+  ctx.font = isWinner ? "700 12px " + EXPORT_FONT_STACK : EXPORT_NAME_FONT;
   drawBidiText(ctx, name, textX, cyMid - (hasId ? 6 : 0), maxTextW);
   if (hasId) {
-    ctx.font = "400 9px 'JetBrains Mono', monospace";
+    ctx.font = EXPORT_ID_FONT;
     ctx.fillStyle = colors.textMuted;
     ctx.direction = 'ltr';
     ctx.textAlign = align;
     ctx.fillText(fitText(ctx, p.discordId, maxTextW), textX, cyMid + 8);
   }
+}
+
+function measureExportSlotContentWidth(matches) {
+  const mctx = document.createElement('canvas').getContext('2d');
+  let maxW = 0;
+  const check = (font, text) => {
+    if (!text) return;
+    mctx.font = font;
+    maxW = Math.max(maxW, mctx.measureText(text).width);
+  };
+  matches.forEach(match => {
+    [match.player1Id, match.player2Id].forEach(pid => {
+      if (pid == null) { check(EXPORT_PLACEHOLDER_FONT, match.isBye ? 'باي (تأهل تلقائي)' : 'بانتظار المتأهل'); return; }
+      const p = getPlayer(pid);
+      if (!p) return;
+      check(EXPORT_NAME_FONT, p.name);
+      check(EXPORT_ID_FONT, p.discordId);
+    });
+  });
+  return maxW;
 }
 
 // Builds the full bracket export at a fixed 2x pixel density for a crisp
@@ -1484,12 +1510,25 @@ async function buildBracketExportCanvas() {
   const maxR = Math.max(...rounds);
   const nameMap = {};
   nameMap[maxR] = 'النهائي';
-  if (maxR === 3) { nameMap[1] = 'ربع النهائي'; nameMap[2] = 'نصف النهائي'; }
+  if (maxR === 5) { nameMap[1] = 'دور الـ32'; nameMap[2] = 'ثمن النهائي'; nameMap[3] = 'ربع النهائي'; nameMap[4] = 'نصف النهائي'; }
+  else if (maxR === 4) { nameMap[1] = 'ثمن النهائي'; nameMap[2] = 'ربع النهائي'; nameMap[3] = 'نصف النهائي'; }
+  else if (maxR === 3) { nameMap[1] = 'ربع النهائي'; nameMap[2] = 'نصف النهائي'; }
   else if (maxR === 2) { nameMap[1] = 'نصف النهائي'; }
   const matchesByRound = rounds.map(r => state.matches.filter(m => m.round === r).sort((a, b) => a.position - b.position));
 
   const scale = 2;
-  const cardW = 230, cardH = 52, vsGapW = 34, gapY = 14, gapX = 70, marginX = 40, headerH = 70, topPad = 46, bottomPad = 40;
+  const cardH = 52, vsGapW = 34, gapY = 14, gapX = 70, marginX = 40, headerH = 70, topPad = 46, bottomPad = 40;
+
+  // Size the card to whatever the longest name/id in THIS tournament
+  // actually needs, instead of a fixed width that clips real names with
+  // an ellipsis. Never shrinks below the original 230px look for a
+  // typical short-name bracket; capped generously so one absurdly long
+  // string can't blow the canvas up without bound (falls back to the
+  // existing ellipsis truncation only past that point).
+  const neededTextW = measureExportSlotContentWidth(state.matches) + 4;
+  const neededHalfW = EXPORT_SLOT_PAD * 2 + EXPORT_AVATAR_R * 2 + EXPORT_NAME_GAP + neededTextW;
+  const halfW = Math.min(Math.max(neededHalfW, (230 - vsGapW) / 2), 320);
+  const cardW = halfW * 2 + vsGapW;
 
   const round1Count = matchesByRound[0].length;
   const contentH = round1Count * cardH + (round1Count - 1) * gapY;
