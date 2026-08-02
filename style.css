@@ -654,6 +654,63 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 
 .theme-swatch.active .theme-swatch-check { display: flex; }
 
+/* Avatar shape picker (theme tab) — same card pattern as .theme-swatch,
+   but with a live shape preview instead of a color strip. */
+.avatar-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.avatar-shape-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 6px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.avatar-shape-option:hover { border-color: var(--border-light); background: var(--bg-surface-hover); }
+
+.avatar-shape-option.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-subtle);
+}
+
+.avatar-shape-option .theme-swatch-check {
+  top: 4px;
+  left: 4px;
+}
+
+.avatar-shape-option.active .theme-swatch-check { display: flex; }
+
+.avatar-shape-option .theme-swatch-label { color: var(--text-secondary); }
+.avatar-shape-option.active .theme-swatch-label { color: var(--primary); }
+
+.shape-preview {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px var(--primary-glow));
+}
+
+.shape-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.shape-preview-circle, .shape-preview-circle img { border-radius: 50%; }
+
+.shape-preview-hexagon, .shape-preview-hexagon img {
+  border-radius: 0;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
+.shape-preview-square, .shape-preview-square img { border-radius: 22%; }
+
 .color-picker-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -1006,9 +1063,7 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 .player-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
   object-fit: cover;
-  border: 2px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -1518,16 +1573,82 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
 .match-slot .slot-avatar {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
-  border: 1.5px solid var(--border);
-  transition: var(--transition);
 }
 
-.match-slot.winner .slot-avatar {
-  border-color: #ffd700;
-  box-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+/* ============================================
+   Avatar Shape System
+   Every player avatar on the site — match-slot cards, the admin players
+   list, and the champion modal — is wrapped in a `.avatar-frame` (the
+   champion modal's own `.champion-avatar` wrapper doubles as one). A
+   `body.avatar-shape-*` class picked from the "المظهر" tab controls the
+   shape; the exported image/PDF draws the same shape from
+   `state.theme.avatarShape` in script.js, so the two always match.
+   The glow ring lives on a `::before` behind the image — since the image
+   fully covers its own shape, only the ring's edge peeks out around it. The
+   glow filter sits on the *wrapper* (not on the ring or the image, which
+   both use clip-path/border-radius) so it isn't clipped away with them. */
+.avatar-frame,
+.champion-avatar {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+  filter: drop-shadow(0 0 5px var(--primary-glow));
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.champion-avatar { filter: drop-shadow(0 0 16px var(--primary-glow)); }
+
+.avatar-frame::before,
+.champion-avatar::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: 0;
+  background: linear-gradient(135deg, var(--primary), var(--primary-light) 55%, var(--primary));
+}
+
+.champion-avatar::before { inset: -5px; }
+
+.avatar-frame img,
+.champion-avatar img {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+
+/* Shape: circle (default) */
+body.avatar-shape-circle .avatar-frame::before, body.avatar-shape-circle .avatar-frame img,
+body.avatar-shape-circle .champion-avatar::before, body.avatar-shape-circle .champion-avatar img {
+  border-radius: 50%;
+}
+
+/* Shape: hexagon (gaming-style) */
+body.avatar-shape-hexagon .avatar-frame::before, body.avatar-shape-hexagon .avatar-frame img,
+body.avatar-shape-hexagon .champion-avatar::before, body.avatar-shape-hexagon .champion-avatar img {
+  border-radius: 0;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
+/* Shape: rounded square (Valorant-card style) */
+body.avatar-shape-square .avatar-frame::before, body.avatar-shape-square .avatar-frame img,
+body.avatar-shape-square .champion-avatar::before, body.avatar-shape-square .champion-avatar img {
+  border-radius: 22%;
+}
+
+/* Winning slot: ring turns gold instead of the primary theme color */
+.match-slot.winner .avatar-frame::before {
+  background: linear-gradient(135deg, #ffd700, #fff6d0 55%, #ffd700);
+}
+
+.match-slot.winner .avatar-frame {
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.55));
+}
+
+.match-slot:not(.empty):not(.locked):hover .avatar-frame {
+  transform: scale(1.07);
 }
 
 .slot-info {
@@ -1781,11 +1902,6 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
   width: 96px;
   height: 96px;
   margin: 0 auto 16px;
-  border-radius: 50%;
-  border: 3px solid var(--primary);
-  box-shadow: 0 0 40px var(--primary-glow);
-  overflow: hidden;
-  position: relative;
 }
 
 .champion-avatar img { width: 100%; height: 100%; object-fit: cover; }

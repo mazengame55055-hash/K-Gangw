@@ -42,6 +42,10 @@ const state = {
     colors: { primary: '#9184c9', textPrimary: '#ece8f5', bgDeep: '#0d0c12', bgSurface: '#1b1822' },
     font: 'rajdhani_inter',
     background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 },
+    // Shape used to frame every player avatar site-wide (match slots, the
+    // admin players list, the champion modal) AND in the exported
+    // image/PDF, so both always look identical. One of: circle | hexagon | square.
+    avatarShape: 'circle',
     // Animation / motion settings — admin-configurable from the "المؤثرات" tab
     // and synced to every visitor like the rest of `theme`.
     animations: {
@@ -494,18 +498,30 @@ function applyThemeBackground(bg) {
   }
 }
 
+// Sets a body-level class so CSS can frame every avatar on the page (and
+// the champion modal) with the chosen shape — see the "Avatar Shape
+// System" block in style.css. The canvas export reads `state.theme.avatarShape`
+// directly instead, so the exported image/PDF always matches.
+function applyAvatarShape(shape) {
+  document.body.classList.remove('avatar-shape-circle', 'avatar-shape-hexagon', 'avatar-shape-square');
+  document.body.classList.add('avatar-shape-' + (shape || 'circle'));
+}
+
 function applyThemeFull() {
   applyThemeColors(state.theme.colors);
   applyThemeFont(state.theme.font);
   applyThemeBackground(state.theme.background);
+  applyAvatarShape(state.theme.avatarShape);
   applyAnimations(state.theme.animations);
 }
 
-// Backfills `theme.animations` for states saved/synced before this feature
-// existed, so older caches / cloud records don't crash on missing keys.
+// Backfills `theme.animations` and `theme.avatarShape` for states
+// saved/synced before those features existed, so older caches / cloud
+// records don't crash on missing keys.
 function ensureAnimationsDefaults() {
   if (!state.theme) return;
   state.theme.animations = Object.assign({}, DEFAULT_ANIMATIONS, state.theme.animations || {});
+  if (!state.theme.avatarShape) state.theme.avatarShape = 'circle';
 }
 
 // ========== Animation Engine ==========
@@ -619,6 +635,21 @@ function renderThemeTab() {
   }
   if ($('#bgOverlayRange')) { $('#bgOverlayRange').value = bg.overlayOpacity; $('#bgOverlayVal').textContent = bg.overlayOpacity + '%'; }
   if ($('#bgBlurRange')) { $('#bgBlurRange').value = bg.blur; $('#bgBlurVal').textContent = bg.blur + 'px'; }
+
+  const shape = state.theme.avatarShape || 'circle';
+  $$('.avatar-shape-option').forEach(b => b.classList.toggle('active', b.dataset.shape === shape));
+}
+
+// Switches the site-wide (and export) avatar frame between circle / hexagon
+// / rounded-square. Synced to every visitor like the rest of `theme`.
+function selectAvatarShape(shape) {
+  if (!['circle', 'hexagon', 'square'].includes(shape)) return;
+  state.theme.avatarShape = shape;
+  applyAvatarShape(shape);
+  renderThemeTab();
+  saveState();
+  const labels = { circle: 'دائري', hexagon: 'مسدس', square: 'مربع دائري الحواف' };
+  toast('تم تغيير شكل صورة اللاعب إلى: ' + labels[shape]);
 }
 
 function selectThemePreset(id) {
@@ -772,6 +803,7 @@ function resetTheme() {
     colors: Object.assign({}, THEME_PRESETS.kgang.colors),
     font: 'rajdhani_inter',
     background: { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 },
+    avatarShape: 'circle',
     animations: Object.assign({}, DEFAULT_ANIMATIONS)
   };
   applyThemeFull();
@@ -954,7 +986,7 @@ function renderPlayers() {
   }
   list.innerHTML = state.players.map(p =>
     '<div class="player-card">' +
-      '<img class="player-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="' + escapeHtml(p.name) + '" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'">' +
+      '<span class="avatar-frame"><img class="player-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="' + escapeHtml(p.name) + '" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'"></span>' +
       '<div class="player-info">' +
         '<div class="player-name">' + escapeHtml(p.name) + '</div>' +
         '<div class="player-discord">' + (p.discordId ? 'ID: ' + escapeHtml(p.discordId) : '') + '</div>' +
@@ -1141,7 +1173,7 @@ function renderBracket() {
     const locked = state.isLocked ? ' locked' : '';
     return '<div class="match-slot ' + sideClass + (iw ? ' winner' : '') + locked + '" data-match="' + match.id + '" data-player="' + playerId + '">' +
       (p
-        ? '<img class="slot-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'">'
+        ? '<span class="avatar-frame"><img class="slot-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'"></span>'
         : '') +
       '<div class="slot-info">' +
         '<span class="slot-name-row"><span class="slot-name">' + (p ? escapeHtml(p.name) : '—') + '</span>' + (match.isBye ? '<span class="bye-tag">BYE</span>' : '') + '</span>' +
@@ -1396,6 +1428,35 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Traces an avatar clip/fill path centered at (cx, cy) with "radius" r, in
+// one of the three shapes offered in the "المظهر" tab. Mirrors the CSS
+// clip-path/border-radius used for the on-page `.avatar-frame` so the
+// exported image/PDF always matches what visitors see on the site.
+function avatarShapePath(ctx, shape, cx, cy, r) {
+  ctx.beginPath();
+  if (shape === 'hexagon') {
+    // Same 6 points (as fractions of the bounding box) as the CSS
+    // clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%).
+    const s = r * 2, x0 = cx - r, y0 = cy - r;
+    [[0.25, 0], [0.75, 0], [1, 0.5], [0.75, 1], [0.25, 1], [0, 0.5]].forEach(([fx, fy], i) => {
+      const px = x0 + fx * s, py = y0 + fy * s;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+  } else if (shape === 'square') {
+    const rad = r * 0.42; // ~ the 22% border-radius used on-page
+    ctx.moveTo(cx - r + rad, cy - r);
+    ctx.arcTo(cx + r, cy - r, cx + r, cy + r, rad);
+    ctx.arcTo(cx + r, cy + r, cx - r, cy + r, rad);
+    ctx.arcTo(cx - r, cy + r, cx - r, cy - r, rad);
+    ctx.arcTo(cx - r, cy - r, cx + r, cy - r, rad);
+    ctx.closePath();
+  } else {
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.closePath();
+  }
+}
+
 const EXPORT_FONT_STACK = "'Rajdhani', Tahoma, Arial, sans-serif";
 const EXPORT_NAME_FONT = "600 12px " + EXPORT_FONT_STACK;
 const EXPORT_ID_FONT = "400 9px 'JetBrains Mono', monospace";
@@ -1404,11 +1465,12 @@ const EXPORT_AVATAR_R = 13;
 const EXPORT_SLOT_PAD = 8;
 const EXPORT_NAME_GAP = 8;
 
-function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, side) {
+function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, side, avatarShape) {
   const avatarR = EXPORT_AVATAR_R;
   const cyMid = y + h / 2;
   const pad = EXPORT_SLOT_PAD;
   const align = side === 'a' ? 'right' : 'left';
+  const shape = avatarShape || 'circle';
 
   if (playerId == null) {
     ctx.fillStyle = colors.textMuted;
@@ -1427,10 +1489,32 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
   // side 'a' is the visual-left slot so its inner edge is its right side.
   const cx = side === 'a' ? (x + w - pad - avatarR) : (x + pad + avatarR);
 
+  // Gradient glow ring behind the avatar — mirrors the on-page
+  // `.avatar-frame::before` frame. Drawn slightly larger than the avatar so
+  // only its edge peeks out once the avatar is clipped on top of it.
+  const ringR = avatarR + 2.5;
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cyMid, avatarR, 0, Math.PI * 2);
-  ctx.closePath();
+  const ringGrad = ctx.createLinearGradient(cx - ringR, cyMid - ringR, cx + ringR, cyMid + ringR);
+  if (isWinner) {
+    ringGrad.addColorStop(0, '#ffd700');
+    ringGrad.addColorStop(0.55, '#fff6d0');
+    ringGrad.addColorStop(1, '#ffd700');
+    ctx.shadowColor = 'rgba(255, 215, 0, 0.55)';
+    ctx.shadowBlur = 10;
+  } else {
+    ringGrad.addColorStop(0, colors.primary);
+    ringGrad.addColorStop(0.55, colors.primaryLight);
+    ringGrad.addColorStop(1, colors.primary);
+    ctx.shadowColor = colors.primaryGlow;
+    ctx.shadowBlur = 6;
+  }
+  avatarShapePath(ctx, shape, cx, cyMid, ringR);
+  ctx.fillStyle = ringGrad;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  avatarShapePath(ctx, shape, cx, cyMid, avatarR);
   ctx.clip();
   const img = avatarCache.get(playerId);
   if (img) {
@@ -1446,13 +1530,6 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
     ctx.fillText((name || '?').trim().charAt(0).toUpperCase(), cx, cyMid + 1);
   }
   ctx.restore();
-  if (isWinner) {
-    ctx.strokeStyle = '#ffd700';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(cx, cyMid, avatarR, 0, Math.PI * 2);
-    ctx.stroke();
-  }
 
   // Name (and discord id, if set) sit on the outer side of the avatar,
   // away from the "vs" gap — mirrors the on-page slot-info stack.
@@ -1506,11 +1583,14 @@ async function buildBracketExportCanvas() {
     bgCard: v('--bg-card', '#1b1822'),
     border: v('--border', '#332f3d'),
     primary: v('--primary', '#9184c9'),
+    primaryLight: v('--primary-light', '#c4bce2'),
+    primaryGlow: v('--primary-glow', 'rgba(145, 132, 201, 0.35)'),
     textPrimary: v('--text-primary', '#ece8f5'),
     textSecondary: v('--text-secondary', '#b8b0cc'),
     textMuted: v('--text-muted', '#7d7690'),
     winBg: v('--win-bg', 'rgba(255, 215, 0, 0.08)')
   };
+  const avatarShape = state.theme.avatarShape || 'circle';
 
   const rounds = [...new Set(state.matches.map(m => m.round))].sort((a, b) => a - b);
   const nameMap = buildRoundNameMap(rounds);
@@ -1602,8 +1682,8 @@ async function buildBracketExportCanvas() {
       ctx.stroke();
 
       const halfW = (cardW - vsGapW) / 2;
-      drawExportSlot(ctx, match, match.player1Id, x, y, halfW, cardH, colors, avatarCache, 'a');
-      drawExportSlot(ctx, match, match.player2Id, x + halfW + vsGapW, y, halfW, cardH, colors, avatarCache, 'b');
+      drawExportSlot(ctx, match, match.player1Id, x, y, halfW, cardH, colors, avatarCache, 'a', avatarShape);
+      drawExportSlot(ctx, match, match.player2Id, x + halfW + vsGapW, y, halfW, cardH, colors, avatarCache, 'b', avatarShape);
 
       ctx.font = "700 9px " + EXPORT_FONT_STACK;
       ctx.fillStyle = match.winnerId ? colors.primary : colors.textMuted;
