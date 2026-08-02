@@ -429,8 +429,8 @@ function applyThemeFont(fontId) {
   const newHref = 'https://fonts.googleapis.com/css2?' + f.google + '&display=swap';
   if (link.href !== newHref) link.href = newHref;
   const root = document.documentElement.style;
-  root.setProperty('--font-display', "'" + f.display + "', sans-serif");
-  root.setProperty('--font-body', "'" + f.body + "', sans-serif");
+  root.setProperty('--font-display', "'" + f.display + "', 'Cairo', sans-serif");
+  root.setProperty('--font-body', "'" + f.body + "', 'Cairo', sans-serif");
   root.setProperty('--font-mono', "'" + f.mono + "', monospace");
 }
 
