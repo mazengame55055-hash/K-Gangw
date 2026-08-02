@@ -1322,15 +1322,41 @@ function setExportButtonsBusy(busy) {
 // the caller draws a plain initial-letter avatar instead — this guarantees
 // the final canvas can never end up "tainted" (which used to make the
 // whole export fail/blank without a clear reason).
+//
+// Many avatar hosts (imgur, random image hosts, some CDNs) simply don't
+// send an Access-Control-Allow-Origin header, so a direct crossOrigin
+// request always fails there — that's what was causing avatars to
+// silently fall back to initials in the exported image/PDF even though
+// they show up fine on the page itself (an <img> tag doesn't need CORS,
+// only a canvas draw does). As a second attempt, retry the same image
+// through images.weserv.nl, a public read-only image proxy that always
+// serves a CORS-friendly response — this recovers most of those cases.
 function loadAvatarSafely(url) {
   return new Promise((resolve) => {
     if (!url || typeof url !== 'string') { resolve(null); return; }
-    const isDataUri = /^data:image\//i.test(url);
-    const img = new Image();
-    if (!isDataUri) img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = url;
+    if (/^data:image\//i.test(url)) {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = url;
+      return;
+    }
+    const attempt = (src, onFail) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = onFail;
+      img.src = src;
+    };
+    attempt(url, () => {
+      let proxied = null;
+      try {
+        const u = new URL(url);
+        proxied = 'https://images.weserv.nl/?url=' + encodeURIComponent(u.host + u.pathname + u.search);
+      } catch (e) { /* not a valid absolute URL — nothing more to try */ }
+      if (!proxied) { resolve(null); return; }
+      attempt(proxied, () => resolve(null));
+    });
   });
 }
 
@@ -1366,29 +1392,28 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
 const EXPORT_FONT_STACK = "'Rajdhani', Tahoma, Arial, sans-serif";
 
-function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache) {
-  const avatarR = 12;
+function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, side) {
+  const avatarR = 13;
   const cyMid = y + h / 2;
-  const pad = 10;
+  const pad = 8;
+  const align = side === 'a' ? 'right' : 'left';
 
   if (playerId == null) {
     ctx.fillStyle = colors.textMuted;
-    ctx.font = "italic 11px " + EXPORT_FONT_STACK;
-    ctx.textAlign = 'left';
+    ctx.font = "italic 10px " + EXPORT_FONT_STACK;
+    ctx.textAlign = align;
     ctx.textBaseline = 'middle';
-    drawBidiText(ctx, match.isBye ? 'باي (تأهل تلقائي)' : 'بانتظار المتأهل', x + pad, cyMid, w - pad * 2);
+    const tx = side === 'a' ? x + w - pad : x + pad;
+    drawBidiText(ctx, match.isBye ? 'باي (تأهل تلقائي)' : 'بانتظار المتأهل', tx, cyMid, w - pad * 2);
     return;
   }
 
   const isWinner = match.winnerId != null && match.winnerId === playerId;
-  if (isWinner) {
-    ctx.fillStyle = 'rgba(255, 215, 0, 0.08)';
-    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-  }
-
   const p = getPlayer(playerId);
   const name = p ? p.name : '—';
-  const cx = x + pad + avatarR;
+  // Avatar sits at the inner edge of the slot (closest to the "vs" gap);
+  // side 'a' is the visual-left slot so its inner edge is its right side.
+  const cx = side === 'a' ? (x + w - pad - avatarR) : (x + pad + avatarR);
 
   ctx.save();
   ctx.beginPath();
@@ -1417,10 +1442,12 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache) {
     ctx.stroke();
   }
 
-  const textX = cx + avatarR + 8;
-  const maxTextW = (x + w - pad) - textX;
+  // Name (and discord id, if set) sit on the outer side of the avatar,
+  // away from the "vs" gap — mirrors the on-page slot-info stack.
+  const textX = side === 'a' ? cx - avatarR - 8 : cx + avatarR + 8;
+  const maxTextW = side === 'a' ? (textX - (x + pad)) : ((x + w - pad) - textX);
   const hasId = !!(p && p.discordId);
-  ctx.textAlign = 'left';
+  ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = isWinner ? '#ffd700' : colors.textSecondary;
   ctx.font = (isWinner ? '600' : '500') + ' 12px ' + EXPORT_FONT_STACK;
@@ -1429,6 +1456,7 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache) {
     ctx.font = "400 9px 'JetBrains Mono', monospace";
     ctx.fillStyle = colors.textMuted;
     ctx.direction = 'ltr';
+    ctx.textAlign = align;
     ctx.fillText(fitText(ctx, p.discordId, maxTextW), textX, cyMid + 8);
   }
 }
@@ -1448,7 +1476,8 @@ async function buildBracketExportCanvas() {
     primary: v('--primary', '#9184c9'),
     textPrimary: v('--text-primary', '#ece8f5'),
     textSecondary: v('--text-secondary', '#b8b0cc'),
-    textMuted: v('--text-muted', '#7d7690')
+    textMuted: v('--text-muted', '#7d7690'),
+    winBg: v('--win-bg', 'rgba(255, 215, 0, 0.08)')
   };
 
   const rounds = [...new Set(state.matches.map(m => m.round))].sort((a, b) => a - b);
@@ -1460,7 +1489,7 @@ async function buildBracketExportCanvas() {
   const matchesByRound = rounds.map(r => state.matches.filter(m => m.round === r).sort((a, b) => a.position - b.position));
 
   const scale = 2;
-  const cardW = 230, slotH = 40, cardH = slotH * 2, gapY = 22, gapX = 70, marginX = 40, headerH = 70, topPad = 46, bottomPad = 40;
+  const cardW = 230, cardH = 52, vsGapW = 34, gapY = 14, gapX = 70, marginX = 40, headerH = 70, topPad = 46, bottomPad = 40;
 
   const round1Count = matchesByRound[0].length;
   const contentH = round1Count * cardH + (round1Count - 1) * gapY;
@@ -1526,18 +1555,23 @@ async function buildBracketExportCanvas() {
 
     matchesByRound[r].forEach((match, i) => {
       const y = yPos[r][i] - cardH / 2;
-      roundRectPath(ctx, x, y, cardW, cardH, 8);
-      ctx.fillStyle = colors.bgCard;
+      roundRectPath(ctx, x, y, cardW, cardH, cardH / 2);
+      ctx.fillStyle = match.winnerId ? colors.winBg : colors.bgCard;
       ctx.fill();
       ctx.strokeStyle = match.winnerId ? 'rgba(145, 132, 201, 0.5)' : colors.border;
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      drawExportSlot(ctx, match, match.player1Id, x, y, cardW, slotH, colors, avatarCache);
-      ctx.strokeStyle = colors.border;
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x + 8, y + slotH); ctx.lineTo(x + cardW - 8, y + slotH); ctx.stroke();
-      drawExportSlot(ctx, match, match.player2Id, x, y + slotH, cardW, slotH, colors, avatarCache);
+      const halfW = (cardW - vsGapW) / 2;
+      drawExportSlot(ctx, match, match.player1Id, x, y, halfW, cardH, colors, avatarCache, 'a');
+      drawExportSlot(ctx, match, match.player2Id, x + halfW + vsGapW, y, halfW, cardH, colors, avatarCache, 'b');
+
+      ctx.font = "700 9px " + EXPORT_FONT_STACK;
+      ctx.fillStyle = match.winnerId ? colors.primary : colors.textMuted;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.direction = 'ltr';
+      ctx.fillText('VS', x + halfW + vsGapW / 2, y + cardH / 2);
     });
   });
 
