@@ -279,7 +279,9 @@ function defaultAvatar(name) {
   // Only allow a single safe letter/digit character into the generated SVG.
   // (Prevents a crafted player name from breaking out of the data URI / markup it's embedded in.)
   if (!c || !/^[A-Za-z0-9\u0600-\u06FF]$/.test(c)) c = '?';
-  return 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'128\' height=\'128\'%3E%3Crect fill=\'%231f1c27\' width=\'128\' height=\'128\'/%3E%3Ctext x=\'64\' y=\'80\' text-anchor=\'middle\' fill=\'%239184c9\' font-size=\'48\' font-weight=\'700\' font-family=\'Rajdhani\'%3E' + encodeURIComponent(c) + '%3C/text%3E%3C/svg%3E';
+  // SVG attrs are percent-encoded (no raw quotes) so the data URI stays safe
+  // inside single-quoted onerror handlers AND double-quoted src attributes.
+  return 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27128%27 height=%27128%27%3E%3Crect fill=%27%231f1c27%27 width=%27128%27 height=%27128%27/%3E%3Ctext x=%2764%27 y=%2780%27 text-anchor=%27middle%27 fill=%27%239184c9%27 font-size=%2748%27 font-weight=%27700%27 font-family=%27Rajdhani%27%3E' + encodeURIComponent(c) + '%3C/text%3E%3C/svg%3E';
 }
 
 function escapeHtml(s) {
@@ -592,9 +594,15 @@ function renderThemeTab() {
   grid.innerHTML = Object.keys(THEME_PRESETS).map(id => {
     const p = THEME_PRESETS[id];
     const active = state.theme.preset === id;
+    // Big live preview shaped like the player avatar (same shape classes the
+    // rest of the site uses), colored with the preset's own primary tones so
+    // each swatch already shows its theme at a glance.
+    const shape = state.theme.avatarShape || 'circle';
+    const primary = p.colors.primary;
+    const primaryLight = mixHex(primary, '#ffffff', 0.82);
     return '<button type="button" class="theme-swatch' + (active ? ' active' : '') + '" onclick="selectThemePreset(\'' + id + '\')">' +
       '<span class="theme-swatch-check">✓</span>' +
-      '<span class="theme-swatch-preview"><span style="background:' + p.colors.bgDeep + '"></span><span style="background:' + p.colors.primary + '"></span><span style="background:' + p.colors.bgSurface + '"></span></span>' +
+      '<span class="theme-swatch-preview theme-swatch-preview-' + shape + '" style="background:linear-gradient(135deg,' + primary + ',' + primaryLight + ' 55%,' + primary + ')"></span>' +
       '<span class="theme-swatch-label">' + escapeHtml(p.label) + '</span>' +
       '</button>';
   }).join('');
@@ -1458,10 +1466,10 @@ function avatarShapePath(ctx, shape, cx, cy, r) {
 }
 
 const EXPORT_FONT_STACK = "'Rajdhani', Tahoma, Arial, sans-serif";
-const EXPORT_NAME_FONT = "600 12px " + EXPORT_FONT_STACK;
-const EXPORT_ID_FONT = "400 9px 'JetBrains Mono', monospace";
+const EXPORT_NAME_FONT = "600 13px " + EXPORT_FONT_STACK;
+const EXPORT_ID_FONT = "400 10px 'JetBrains Mono', monospace";
 const EXPORT_PLACEHOLDER_FONT = "italic 10px " + EXPORT_FONT_STACK;
-const EXPORT_AVATAR_R = 13;
+const EXPORT_AVATAR_R = 17;
 const EXPORT_SLOT_PAD = 8;
 const EXPORT_NAME_GAP = 8;
 
@@ -1539,7 +1547,7 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = isWinner ? '#ffd700' : colors.textSecondary;
-  ctx.font = isWinner ? "700 12px " + EXPORT_FONT_STACK : EXPORT_NAME_FONT;
+  ctx.font = isWinner ? "700 13px " + EXPORT_FONT_STACK : EXPORT_NAME_FONT;
   drawBidiText(ctx, name, textX, cyMid - (hasId ? 6 : 0), maxTextW);
   if (hasId) {
     ctx.font = EXPORT_ID_FONT;
@@ -1570,8 +1578,71 @@ function measureExportSlotContentWidth(matches) {
   return maxW;
 }
 
+function setExportLineDash(ctx, dash) {
+  try { ctx.setLineDash(dash || []); } catch (e) {}
+}
+
+// Replicates `.match-card.match-bye` — faint diagonal stripes of the surface
+// color over a transparent card.
+function drawDiagonalStripes(ctx, x, y, w, h, color) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.4;
+  for (let i = -h; i < w + h; i += 5) {
+    ctx.beginPath();
+    ctx.moveTo(x + i, y + h);
+    ctx.lineTo(x + i + h, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Replicates the site's background (solid / gradient / image + overlay) so
+// the exported bracket sits on the exact same backdrop as the page. The
+// image is loaded CORS-safely (with a weserv.nl fallback) exactly like
+// player avatars; if that fails the base color is kept instead.
+async function drawExportBackground(ctx, w, h, colors) {
+  const bg = (state.theme && state.theme.background) || {};
+  const base = bg.type === 'solid' ? (bg.color || colors.bgDeep) : colors.bgDeep;
+
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, h);
+
+  if (bg.type === 'gradient') {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, bg.gradColor1 || base);
+    g.addColorStop(1, bg.gradColor2 || base);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    return;
+  }
+
+  if (bg.type === 'image' && bg.imageUrl) {
+    const img = await loadAvatarSafely(bg.imageUrl);
+    if (img) {
+      ctx.save();
+      try { ctx.filter = bg.blur ? 'blur(' + bg.blur + 'px)' : 'none'; } catch (e) {}
+      const s = Math.max(w / img.width, h / img.height);
+      const dw = img.width * s, dh = img.height * s;
+      ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      ctx.restore();
+      const overlay = (bg.overlayOpacity != null ? bg.overlayOpacity : 55) / 100;
+      if (overlay > 0) {
+        ctx.fillStyle = hexToRgba(colors.bgDeep, overlay);
+        ctx.fillRect(0, 0, w, h);
+      }
+    }
+  }
+}
+
 // Builds the full bracket export at a fixed 2x pixel density for a crisp
-// download regardless of the viewer's screen.
+// download regardless of the viewer's screen. Every element mirrors the
+// on-page bracket (see the "Bracket" block in style.css): transparent
+// unboxed cards, dashed separators, muted connectors, round headers, and
+// the site background + paused overlay.
 async function buildBracketExportCanvas() {
   if (!state.tournamentStarted || !state.matches.length) throw new Error('NO_DATA');
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
@@ -1580,7 +1651,9 @@ async function buildBracketExportCanvas() {
   const v = (name, fallback) => (cs.getPropertyValue(name) || '').trim() || fallback;
   const colors = {
     bgDeep: v('--bg-deep', '#0d0c12'),
+    bgDark: v('--bg-dark', '#1b1822'),
     bgCard: v('--bg-card', '#1b1822'),
+    bgSurface: v('--bg-surface', '#1b1822'),
     border: v('--border', '#332f3d'),
     primary: v('--primary', '#9184c9'),
     primaryLight: v('--primary-light', '#c4bce2'),
@@ -1597,7 +1670,8 @@ async function buildBracketExportCanvas() {
   const matchesByRound = rounds.map(r => state.matches.filter(m => m.round === r).sort((a, b) => a.position - b.position));
 
   const scale = 2;
-  const cardH = 52, vsGapW = 34, gapY = 14, gapX = 70, marginX = 40, headerH = 70, topPad = 46, bottomPad = 40;
+  const cardH = 56, vsGapW = 34, gapY = 14, columnPad = 8, connStub = 8;
+  const marginX = 40, containerPad = 24, headerH = 46, topPad = 58, bottomPad = 40;
 
   // Size the card to whatever the longest name/id in THIS tournament
   // actually needs, instead of a fixed width that clips real names with
@@ -1609,11 +1683,19 @@ async function buildBracketExportCanvas() {
   const neededHalfW = EXPORT_SLOT_PAD * 2 + EXPORT_AVATAR_R * 2 + EXPORT_NAME_GAP + neededTextW;
   const halfW = Math.min(Math.max(neededHalfW, (230 - vsGapW) / 2), 320);
   const cardW = halfW * 2 + vsGapW;
+  const columnW = cardW + columnPad * 2;
 
   const round1Count = matchesByRound[0].length;
   const contentH = round1Count * cardH + (round1Count - 1) * gapY;
-  const cssW = marginX * 2 + rounds.length * cardW + (rounds.length - 1) * gapX;
-  const cssH = topPad + headerH + contentH + bottomPad;
+  const gridW = rounds.length * columnW;
+  const gridX = marginX + containerPad;
+  const cssW = marginX * 2 + gridW + containerPad * 2;
+  const containerX = marginX, containerW = cssW - marginX * 2;
+  const containerTop = topPad + 8;
+  const gridTop = containerTop + containerPad;
+  const cardsTop = gridTop + headerH + 8;
+  const containerBottom = cardsTop + contentH + containerPad;
+  const cssH = containerBottom + bottomPad;
 
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(cssW * scale);
@@ -1621,19 +1703,102 @@ async function buildBracketExportCanvas() {
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
 
-  ctx.fillStyle = colors.bgDeep;
-  ctx.fillRect(0, 0, cssW, cssH);
+  await drawExportBackground(ctx, cssW, cssH, colors);
 
+  // Title — tournament name, centered above the grid like the page header.
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = colors.textPrimary;
   ctx.font = "700 22px " + EXPORT_FONT_STACK;
-  drawBidiText(ctx, state.settings.name || 'K-Gang Tournament', cssW / 2, topPad - 12, cssW - marginX * 2);
+  drawBidiText(ctx, state.settings.name || 'K-Gang Tournament', cssW / 2, topPad - 14, cssW - marginX * 2);
 
+  // The dark rounded container the on-page bracket lives in
+  // (`.bracket-container`): bg-dark + two subtle radial glows + a border.
+  {
+    roundRectPath(ctx, containerX, containerTop, containerW, containerBottom - containerTop, 16);
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = colors.bgDark;
+    ctx.fillRect(containerX, containerTop, containerW, containerBottom - containerTop);
+    const glows = [
+      { x: containerX + containerW * 0.2, y: containerTop + (containerBottom - containerTop) * 0.5, a: 0.04 },
+      { x: containerX + containerW * 0.8, y: containerTop + (containerBottom - containerTop) * 0.5, a: 0.03 }
+    ];
+    glows.forEach(gl => {
+      const rad = containerW * 0.45;
+      const rg = ctx.createRadialGradient(gl.x, gl.y, 0, gl.x, gl.y, rad);
+      rg.addColorStop(0, hexToRgba(colors.primary, gl.a));
+      rg.addColorStop(1, hexToRgba(colors.primary, 0));
+      ctx.fillStyle = rg;
+      ctx.fillRect(containerX, containerTop, containerW, containerBottom - containerTop);
+    });
+    ctx.restore();
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Row centers per column — same layout as the page's flex columns.
   const yPos = [];
-  yPos[0] = matchesByRound[0].map((m, i) => topPad + headerH + i * (cardH + gapY) + cardH / 2);
+  yPos[0] = matchesByRound[0].map((m, i) => cardsTop + i * (cardH + gapY) + cardH / 2);
   for (let r = 1; r < rounds.length; r++) {
     yPos[r] = matchesByRound[r].map((m, i) => (yPos[r - 1][2 * i] + yPos[r - 1][2 * i + 1]) / 2);
+  }
+
+  // Round headers (with the page's border-bottom) + vertical dividers
+  // between columns (the gradient fade line from `.round-column::after`).
+  rounds.forEach((round, r) => {
+    const colX = gridX + r * columnW;
+    ctx.font = "700 11px " + EXPORT_FONT_STACK;
+    ctx.fillStyle = colors.textMuted;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    drawBidiText(ctx, nameMap[round] || ('الدور ' + round), colX + columnW / 2, gridTop + headerH - 16, columnW - 8);
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(colX, gridTop + headerH - 5);
+    ctx.lineTo(colX + columnW, gridTop + headerH - 5);
+    ctx.stroke();
+
+    if (r < rounds.length - 1) {
+      const gx = colX + columnW;
+      const grad = ctx.createLinearGradient(0, cardsTop, 0, cardsTop + contentH);
+      grad.addColorStop(0, hexToRgba(colors.border, 0));
+      grad.addColorStop(0.3, hexToRgba(colors.border, 0.6));
+      grad.addColorStop(0.7, hexToRgba(colors.border, 0.6));
+      grad.addColorStop(1, hexToRgba(colors.border, 0));
+      ctx.strokeStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(gx, cardsTop);
+      ctx.lineTo(gx, cardsTop + contentH);
+      ctx.stroke();
+    }
+  });
+
+  // Bracket connectors between round r and r+1 — muted stubs + a vertical
+  // link, highlighted in primary for matches that already have a winner.
+  ctx.lineWidth = 1.5;
+  for (let r = 0; r < rounds.length - 1; r++) {
+    const colX = gridX + r * columnW;
+    const cardRight = colX + columnPad + cardW;
+    const vx = cardRight + connStub;
+    const nextCardX = gridX + (r + 1) * columnW + columnPad;
+    matchesByRound[r + 1].forEach((nm, ni) => {
+      const y0 = yPos[r][2 * ni], y1 = yPos[r][2 * ni + 1], nextCy = yPos[r + 1][ni];
+      const winner = nm.winnerId != null;
+      ctx.strokeStyle = winner ? colors.primary : colors.border;
+      ctx.globalAlpha = winner ? 0.9 : 0.55;
+      ctx.beginPath(); ctx.moveTo(cardRight, y0); ctx.lineTo(vx, y0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cardRight, y1); ctx.lineTo(vx, y1); ctx.stroke();
+      ctx.globalAlpha = 0.3;
+      ctx.strokeStyle = colors.border;
+      ctx.beginPath(); ctx.moveTo(vx, y0); ctx.lineTo(vx, y1); ctx.stroke();
+      ctx.globalAlpha = winner ? 0.9 : 0.55;
+      ctx.strokeStyle = winner ? colors.primary : colors.border;
+      ctx.beginPath(); ctx.moveTo(vx, nextCy); ctx.lineTo(nextCardX, nextCy); ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
   }
 
   const playerIds = new Set();
@@ -1646,53 +1811,67 @@ async function buildBracketExportCanvas() {
     if (img) avatarCache.set(pid, img);
   }));
 
-  // Connectors first, so card fills sit cleanly on top of the line ends.
-  ctx.strokeStyle = colors.border;
-  ctx.lineWidth = 1.5;
-  for (let r = 0; r < rounds.length - 1; r++) {
-    const x = marginX + r * (cardW + gapX);
-    const nextX = marginX + (r + 1) * (cardW + gapX);
-    const midX = x + cardW + gapX / 2;
-    matchesByRound[r + 1].forEach((nm, ni) => {
-      const y0 = yPos[r][2 * ni], y1 = yPos[r][2 * ni + 1], nextCy = yPos[r + 1][ni];
-      ctx.beginPath();
-      ctx.moveTo(x + cardW, y0); ctx.lineTo(midX, y0);
-      ctx.moveTo(x + cardW, y1); ctx.lineTo(midX, y1);
-      ctx.moveTo(midX, y0); ctx.lineTo(midX, y1);
-      ctx.moveTo(midX, nextCy); ctx.lineTo(nextX, nextCy);
-      ctx.stroke();
-    });
-  }
-
+  // Match cards — unboxed/transparent like the page, with the winner tint,
+  // bye stripes, and dashed separators from the on-screen CSS.
   rounds.forEach((round, r) => {
-    const x = marginX + r * (cardW + gapX);
-    ctx.font = "700 13px " + EXPORT_FONT_STACK;
-    ctx.fillStyle = colors.textMuted;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    drawBidiText(ctx, nameMap[round] || ('الدور ' + round), x + cardW / 2, topPad + headerH - 18, cardW);
-
-    matchesByRound[r].forEach((match, i) => {
+    const colX = gridX + r * columnW;
+    const x = colX + columnPad;
+    const matches = matchesByRound[r];
+    matches.forEach((match, i) => {
       const y = yPos[r][i] - cardH / 2;
-      roundRectPath(ctx, x, y, cardW, cardH, cardH / 2);
-      ctx.fillStyle = match.winnerId ? colors.winBg : colors.bgCard;
-      ctx.fill();
-      ctx.strokeStyle = match.winnerId ? 'rgba(145, 132, 201, 0.5)' : colors.border;
-      ctx.lineWidth = 1;
-      ctx.stroke();
+
+      if (match.winnerId != null) {
+        roundRectPath(ctx, x, y, cardW, cardH, 10);
+        ctx.fillStyle = colors.winBg;
+        ctx.fill();
+      } else if (match.isBye) {
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        drawDiagonalStripes(ctx, x, y, cardW, cardH, colors.bgSurface);
+        ctx.restore();
+      }
+
+      if (i < matches.length - 1) {
+        ctx.strokeStyle = colors.border;
+        ctx.lineWidth = 1;
+        setExportLineDash(ctx, [4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, y + cardH);
+        ctx.lineTo(x + cardW, y + cardH);
+        ctx.stroke();
+        setExportLineDash(ctx, []);
+      }
 
       const halfW = (cardW - vsGapW) / 2;
       drawExportSlot(ctx, match, match.player1Id, x, y, halfW, cardH, colors, avatarCache, 'a', avatarShape);
       drawExportSlot(ctx, match, match.player2Id, x + halfW + vsGapW, y, halfW, cardH, colors, avatarCache, 'b', avatarShape);
 
       ctx.font = "700 9px " + EXPORT_FONT_STACK;
-      ctx.fillStyle = match.winnerId ? colors.primary : colors.textMuted;
+      ctx.fillStyle = match.winnerId ? colors.primaryLight : colors.textMuted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.direction = 'ltr';
       ctx.fillText('VS', x + halfW + vsGapW / 2, y + cardH / 2);
     });
   });
+
+  // Paused banner overlay — same treatment as `.paused-banner` on the page.
+  if (state.tournamentPaused) {
+    ctx.save();
+    roundRectPath(ctx, containerX, containerTop, containerW, containerBottom - containerTop, 16);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(10, 15, 22, 0.85)';
+    ctx.fillRect(containerX, containerTop, containerW, containerBottom - containerTop);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffc107';
+    ctx.font = "700 28px " + EXPORT_FONT_STACK;
+    drawBidiText(ctx, 'البطولة موقوفة مؤقتاً', cssW / 2, (containerTop + containerBottom) / 2 - 14, containerW - marginX * 2);
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = "400 14px " + EXPORT_FONT_STACK;
+    drawBidiText(ctx, 'المباريات متوقفة حتى استئناف البطولة', cssW / 2, (containerTop + containerBottom) / 2 + 16, containerW - marginX * 2);
+    ctx.restore();
+  }
 
   return canvas;
 }
