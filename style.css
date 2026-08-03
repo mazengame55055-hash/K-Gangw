@@ -1169,6 +1169,141 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
   background: var(--primary-subtle);
 }
 
+/* Bracket order control — the number badge shows the team's bracket
+   position (seed); the ▲▼ arrows move it, so the admin decides "who plays
+   whom" before pressing start. */
+.order-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--primary-subtle);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.move-col { display: flex; flex-direction: column; gap: 1px; }
+
+.move-btn {
+  padding: 1px 5px !important;
+  font-size: 10px !important;
+  line-height: 1.2;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.move-btn:hover:not(.disabled) {
+  color: #4fc3f7;
+  border-color: rgba(79, 195, 247, 0.5);
+  background: rgba(79, 195, 247, 0.1);
+}
+.move-btn.disabled { opacity: 0.25; cursor: not-allowed; }
+
+.player-actions .pic-btn:hover {
+  color: #c58af9;
+  background: rgba(197, 138, 249, 0.12);
+}
+
+/* Team picture upload inside the add-player form */
+.hidden-file { display: none; }
+.avatar-upload-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.avatar-upload-btn { cursor: pointer; font-size: 12px; padding: 6px 10px; display: inline-block; }
+.avatar-preview {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+/* Round-1 pairing preview shown in the players tab before starting */
+#pairingPreview {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.pairing-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+.pairing-title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.pairing-badges { color: var(--primary); }
+.pairing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+.pairing-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.pairing-num {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-size: 11px;
+  min-width: 16px;
+}
+.pairing-team {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pairing-seed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--primary-subtle);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+.pairing-bye {
+  flex: 1;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.pairing-vs {
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
 /* Manage tab */
 .manage-actions { display: flex; gap: 12px; margin-bottom: 16px; }
 
@@ -1536,6 +1671,24 @@ body, .header, .admin-panel, .match-card, .match-slot, .nav-btn,
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
   position: relative;
+}
+
+/* Badge shown in the first-round header when the tournament has byes
+   (e.g. 17 teams -> دور الـ32 with 15 auto-qualifiers). Makes it obvious
+   the byes are intentional, not a glitch. */
+.round-bye-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.08));
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: none;
+  vertical-align: middle;
 }
 
 /* Match Card — a single horizontal row: name + avatar, "vs", avatar + name.

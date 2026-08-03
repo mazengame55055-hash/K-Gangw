@@ -135,7 +135,14 @@ function getSyncPayload() {
 // every visitor's browser converges on the same shared state.
 function saveState() {
   try { localStorage.setItem('kgang_bracket_v1', JSON.stringify(state)); } catch (e) {}
+  // Never let a state that lost the admin password hash (or never had one
+  // in the cloud) overwrite a bin that DOES have one — otherwise a single
+  // stale load can silently wipe the panel lock for every visitor.
   if (!cloudEnabled || isApplyingRemoteUpdate) return;
+  if (state.adminPasswordHash == null) {
+    console.warn('[K-Gang] refusing cloud push while adminPasswordHash is missing');
+    return;
+  }
   clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(pushToCloud, 600);
 }
@@ -259,13 +266,23 @@ async function pullFromCloud() {
     if (updatedAt && updatedAt === lastSeenUpdatedAt) return; // nothing new since last check
     lastSeenUpdatedAt = updatedAt;
     isApplyingRemoteUpdate = true;
-    const record = parseCloudRecord(data.record);
-    SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
-    ensureAnimationsDefaults();
-    buildPlayerMap();
-    saveLocalOnly();
-    renderAll();
-    isApplyingRemoteUpdate = false;
+    try {
+      const record = parseCloudRecord(data.record);
+      // If the cloud record lost its password hash (e.g. a stale device
+      // pushed a null), keep the hash we already have instead of unlocking
+      // the panel for everyone on the next poll.
+      const localHashBeforePull = state.adminPasswordHash;
+      SYNCED_FIELDS.forEach(k => { if (record[k] !== undefined) state[k] = record[k]; });
+      if (record.adminPasswordHash == null && localHashBeforePull != null) {
+        state.adminPasswordHash = localHashBeforePull;
+      }
+      ensureAnimationsDefaults();
+      buildPlayerMap();
+      saveLocalOnly();
+      renderAll();
+    } finally {
+      isApplyingRemoteUpdate = false;
+    }
   } catch (e) {
     console.error('[K-Gang] cloud pull failed', e);
     toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات JSONBin أعلى script.js', 'error');
@@ -325,14 +342,15 @@ function escapeAttr(s) {
     .replace(/'/g, '&#39;');
 }
 
-// Only allow http(s) URLs or our own generated data:image/svg+xml avatars.
+// Only allow http(s) URLs or our own generated data:image/svg+xml avatars,
+// plus compressed image data URLs produced by the avatar upload (WebP/PNG).
 // Anything else (javascript:, a crafted string with quotes/onerror=, etc.)
 // falls back to a generated default avatar instead of being trusted.
 function sanitizeAvatarUrl(url, name) {
   const fallback = defaultAvatar(name);
   if (!url || typeof url !== 'string') return fallback;
   const trimmed = url.trim();
-  if (/^data:image\/svg\+xml,/i.test(trimmed)) return trimmed;
+  if (/^data:image\/(svg\+xml|png|jpe?g|webp|gif);/i.test(trimmed)) return trimmed;
   try {
     const u = new URL(trimmed, window.location.href);
     if (u.protocol === 'http:' || u.protocol === 'https:') return trimmed;
@@ -929,6 +947,8 @@ function compressImageToDataUrl(img) {
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, w, h);
     for (const q of qualities) {
       const dataUrl = canvas.toDataURL(mime, q);
@@ -987,6 +1007,8 @@ function compressLogoToDataUrl(img) {
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, w, h);
     if (mime === 'image/png') {
       const dataUrl = canvas.toDataURL(mime);
@@ -1037,6 +1059,100 @@ function removeTeamLogo() {
   renderThemeTab();
   saveState();
   toast('تم حذف شعار الفريق');
+}
+
+// Per-player (team) avatar upload. Avatars render tiny (40px on screen,
+// ~64px in the export), so we compress far more aggressively than the logo
+// path — keeping 17+ avatars inside the cloud size limit (~5KB each).
+const AVATAR_TARGET_BYTES = 5000;
+const AVATAR_HARD_CAP_BYTES = 12000;
+
+function compressAvatarToDataUrl(img) {
+  const mime = supportsWebpEncoding() ? 'image/webp' : 'image/png';
+  const widths = [128, 96, 64];
+  const qualities = [0.8, 0.6, 0.42];
+  let best = null;
+  for (const maxW of widths) {
+    const scale = Math.min(1, maxW / img.width);
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, w, h);
+    for (const q of qualities) {
+      const dataUrl = canvas.toDataURL(mime, q);
+      if (!best || dataUrl.length < best.length) best = dataUrl;
+      if (dataUrl.length <= AVATAR_TARGET_BYTES) return dataUrl;
+    }
+  }
+  return best && best.length <= AVATAR_HARD_CAP_BYTES ? best : null;
+}
+
+// Upload a picture from the "إضافة لاعب" form — it fills the URL field with
+// a compressed data URL so addPlayer() stores it like any other avatar.
+function handlePlayerAvatarUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('لازم تختار ملف صورة', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = function() {
+    const img = new Image();
+    img.onload = function() {
+      const dataUrl = compressAvatarToDataUrl(img);
+      if (!dataUrl) {
+        toast('⚠️ الصورة كبيرة جداً حتى بعد الضغط — جرّب صورة أصغر', 'error');
+        return;
+      }
+      $('#playerAvatar').value = dataUrl;
+      const prev = $('#avatarPreview');
+      if (prev) { prev.src = dataUrl; prev.style.display = 'block'; }
+      const kb = Math.round(dataUrl.length / 1024);
+      toast('تم تجهيز الصورة (~' + kb + ' كيلوبايت) — اضغط «إضافة لاعب»');
+    };
+    img.onerror = function() { toast('تعذّر قراءة الصورة', 'error'); };
+    img.src = reader.result;
+  };
+  reader.onerror = function() { toast('تعذّر قراءة الملف', 'error'); };
+  reader.readAsDataURL(file);
+}
+
+// Change the picture of an EXISTING team directly from its row in the list.
+let pendingAvatarPlayerId = null;
+function pickPlayerRowImage(id) {
+  if (state.tournamentStarted) { toast('لا يمكن تعديل اللاعبين بعد بدء البطولة', 'error'); return; }
+  pendingAvatarPlayerId = id;
+  const input = $('#playerRowImage');
+  if (input) input.click();
+}
+function applyPlayerRowImage(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const id = pendingAvatarPlayerId;
+  pendingAvatarPlayerId = null;
+  if (id == null) return;
+  if (!file.type.startsWith('image/')) { toast('لازم تختار ملف صورة', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = function() {
+    const img = new Image();
+    img.onload = function() {
+      const dataUrl = compressAvatarToDataUrl(img);
+      if (!dataUrl) { toast('⚠️ الصورة كبيرة جداً حتى بعد الضغط — جرّب صورة أصغر', 'error'); return; }
+      const p = getPlayer(id);
+      if (!p) return;
+      p.avatarUrl = dataUrl;
+      saveState(); renderPlayers(); updateStats();
+      toast('تم تحديث صورة ' + p.name);
+    };
+    img.onerror = function() { toast('تعذّر قراءة الصورة', 'error'); };
+    img.src = reader.result;
+  };
+  reader.onerror = function() { toast('تعذّر قراءة الملف', 'error'); };
+  reader.readAsDataURL(file);
 }
 
 function resetTheme() {
@@ -1162,9 +1278,18 @@ document.addEventListener('click', function(e) {
 });
 
 // ========== Players ==========
+// Strips invisible / zero-width Unicode characters (word-joiner U+2060,
+// zero-width space/joiner/non-joiner U+200B-D, LRM/RLM, BOM, NBSP) from a
+// team name. Names pasted from Discord/chats often carry these, which make
+// two teams LOOK like a duplicate («الحبه الكامله» vs «الحبه-الكامله»),
+// break copy/paste and shuffle the bracket order visually.
+function normalizePlayerName(name) {
+  return String(name).replace(/[\u00A0\u200B-\u200F\u2060-\u2063\uFEFF]/g, '').trim();
+}
+
 function addPlayer(e) {
   e.preventDefault();
-  const name = $('#playerName').value.trim();
+  const name = normalizePlayerName($('#playerName').value);
   if (!name) { toast('الرجاء إدخال اسم اللاعب', 'error'); return; }
   const avatarInput = $('#playerAvatar').value.trim();
   state.players.push({
@@ -1190,12 +1315,31 @@ function removePlayer(id) {
   saveState(); renderPlayers(); updateStats(); toast('تم حذف اللاعب');
 }
 
+// Manual bracket-order control. The seed (1..N) IS the bracket position, so
+// moving a team up/down here directly changes "who plays whom" in the
+// bracket — the admin decides the order before pressing start instead of
+// letting the app scatter teams. Blocked after the tournament starts.
+function movePlayer(id, dir) {
+  if (state.tournamentStarted) { toast('لا يمكن تعديل الترتيب بعد بدء البطولة — اعمل إعادة تعيين الأول', 'error'); return; }
+  const i = state.players.findIndex(p => p.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= state.players.length) return;
+  const arr = state.players;
+  const moved = arr[i];
+  arr[i] = arr[j];
+  arr[j] = moved;
+  arr.forEach((p, k) => p.seed = k + 1);
+  buildPlayerMap();
+  saveState(); renderPlayers(); updateStats();
+  toast(moved.name + ' ← المركز ' + moved.seed + ' في الترتيب');
+}
+
 function editPlayer(id) {
   const p = getPlayer(id);
   if (!p) return;
-  const n = prompt('اسم اللاعب:', p.name);
-  if (!n || !n.trim()) return;
-  p.name = n.trim();
+  const n = normalizePlayerName(prompt('اسم اللاعب:', p.name) || '');
+  if (!n) return;
+  p.name = n;
 
   // Cancel returns null from prompt(); previously that was coerced to '' and
   // silently wiped out an existing Discord ID / avatar. Only overwrite when
@@ -1226,40 +1370,92 @@ function renderPlayers() {
   $('#playersCount').textContent = state.players.length;
   if (!state.players.length) {
     list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:13px;">لا يوجد لاعبون بعد. أضف لاعباً الآن!</div>';
+    renderPairingPreview();
     return;
   }
-  list.innerHTML = state.players.map(p =>
-    '<div class="player-card">' +
+  const locked = state.tournamentStarted;
+  list.innerHTML = state.players.map((p, i) => {
+    const up = !locked && i > 0 ? '<button class="move-btn" data-dir="-1" onclick="movePlayer(' + p.id + ',-1)" title="تحريك لأعلى">▲</button>' : '<button class="move-btn disabled" disabled>▲</button>';
+    const down = !locked && i < state.players.length - 1 ? '<button class="move-btn" data-dir="1" onclick="movePlayer(' + p.id + ',1)" title="تحريك لأسفل">▼</button>' : '<button class="move-btn disabled" disabled>▼</button>';
+    return '<div class="player-card">' +
+      '<span class="order-badge" title="الترتيب في المخطط">' + p.seed + '</span>' +
       '<span class="avatar-frame"><img class="player-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="' + escapeHtml(p.name) + '" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'"></span>' +
       '<div class="player-info">' +
         '<div class="player-name">' + escapeHtml(p.name) + '</div>' +
         '<div class="player-discord">' + (p.discordId ? 'ID: ' + escapeHtml(p.discordId) : '') + '</div>' +
       '</div>' +
       '<div class="player-actions">' +
+        '<div class="move-col">' + up + down + '</div>' +
+        '<button class="pic-btn" onclick="pickPlayerRowImage(' + p.id + ')" title="تغيير صورة الفريق">🖼</button>' +
         '<button class="edit-btn" onclick="editPlayer(' + p.id + ')" title="تعديل">✎</button>' +
         '<button class="delete-btn" onclick="removePlayer(' + p.id + ')" title="حذف">✕</button>' +
       '</div>' +
-    '</div>'
-  ).join('');
+    '</div>';
+  }).join('');
+  renderPairingPreview();
+}
+
+// ===== Round-1 pairing preview (admin side) =====
+// Shows, BEFORE the tournament starts, exactly who plays whom in the first
+// round — including the automatic byes that an odd team count forces. This
+// is the same seed->slot math generateBracket() uses, read-only here.
+function roundOneLabel(size) {
+  if (size >= 32) return 'دور الـ32';
+  if (size === 16) return 'ثمن النهائي';
+  if (size === 8) return 'ربع النهائي';
+  if (size === 4) return 'نصف النهائي';
+  return 'النهائي';
+}
+
+function roundOnePairings() {
+  const n = state.players.length;
+  const size = Math.pow(2, Math.ceil(Math.log2(n)));
+  const sorted = [...state.players].sort((a, b) => a.seed - b.seed);
+  // Sequential placement: the order you set in the list IS the matchup
+  // order — the first two teams face each other, then the next two, and so
+  // on. No standard-seeding reshuffle, so "who plays whom" is exactly what
+  // the admin arranged.
+  const slots = new Array(size).fill(null);
+  sorted.forEach((p, i) => { slots[i] = p; });
+  const pairs = [];
+  for (let i = 0; i < slots.length; i += 2) pairs.push({ p1: slots[i], p2: slots[i + 1] });
+  return pairs;
+}
+
+function renderPairingPreview() {
+  const box = $('#pairingPreview');
+  if (!box) return;
+  if (state.tournamentStarted) {
+    box.style.display = 'block';
+    box.innerHTML = '<div class="pairing-hint">البطولة بدأت — الترتيب مقفول. لتغيير «مين ضد مين»: اعمل <strong>إعادة تعيين البطولة</strong> ثم رتّب الفرق بالأسهم قبل الضغط على «بدأ».</div>';
+    return;
+  }
+  if (state.players.length < 2) { box.style.display = 'none'; return; }
+  const pairs = roundOnePairings();
+  const size = Math.pow(2, Math.ceil(Math.log2(state.players.length)));
+  const label = roundOneLabel(size);
+  const byes = pairs.filter(p => (p.p1 && !p.p2) || (!p.p1 && p.p2)).length;
+  const rows = pairs.filter(p => p.p1 || p.p2);
+  const name = pl => pl
+    ? '<span class="pairing-team"><span class="pairing-seed">' + pl.seed + '</span>' + escapeHtml(pl.name) + '</span>'
+    : '<span class="pairing-bye">تأهل تلقائي</span>';
+  box.style.display = 'block';
+  box.innerHTML =
+    '<div class="pairing-hint">الترتيب = المواجهات: أول فريقين في القايمة يقابلوا بعض، بعدين التالت والرابع… حرّك الفرق بأسهم ▲▼ عشان تحدد «مين يقابل مين»، وشوف النتيجة هنا قبل ما تضغط «بدأ».</div>' +
+    '<div class="pairing-title">' + label + (byes ? ' · <span class="pairing-badges">' + byes + ' تأهل تلقائي</span>' : '') + '</div>' +
+    '<div class="pairing-grid">' +
+      rows.map((p, i) =>
+        '<div class="pairing-row">' +
+          '<span class="pairing-num">' + (i + 1) + '</span>' +
+          name(p.p1) +
+          '<span class="pairing-vs">VS</span>' +
+          name(p.p2) +
+        '</div>'
+      ).join('') +
+    '</div>';
 }
 
 // ========== Bracket ==========
-// Standard tournament seeding order (e.g. for size 8: [1,8,4,5,2,7,3,6]).
-// This is the classic recursive "avoid top seeds meeting early" bracket
-// layout used by real tournaments (NCAA-style), so seed 1 and seed 2 can
-// only meet in the final, seeds 1-4 can't meet before the semis, etc.
-function standardSeedOrder(size) {
-  if (size <= 1) return [1];
-  let order = [1, 2];
-  while (order.length < size) {
-    const total = order.length * 2 + 1;
-    const next = [];
-    order.forEach(s => { next.push(s); next.push(total - s); });
-    order = next;
-  }
-  return order;
-}
-
 function generateBracket() {
   if (state.players.length < 2) { toast('يجب إضافة لاعبين على الأقل', 'error'); return; }
   if (state.tournamentStarted) { toast('البطولة قيد التشغيل', 'error'); return; }
@@ -1267,12 +1463,10 @@ function generateBracket() {
   const size = Math.pow(2, Math.ceil(Math.log2(state.players.length)));
   const rounds = Math.log2(size);
   const sorted = [...state.players].sort((a, b) => a.seed - b.seed);
+  // Sequential placement — the list order IS the bracket order (team 1 vs
+  // team 2, team 3 vs team 4, ...). Matches standardSeedOrder-based seeding.
   const slots = new Array(size).fill(null);
-
-  const order = standardSeedOrder(size); // order[i] = seed number placed at slot i
-  order.forEach((seed, pos) => {
-    if (seed <= sorted.length) slots[pos] = sorted[seed - 1];
-  });
+  sorted.forEach((p, i) => { slots[i] = p; });
 
   state.matches = [];
   state.nextMatchId = 1;
@@ -1281,7 +1475,10 @@ function generateBracket() {
 
   for (let i = 0; i < slots.length; i += 2) {
     const p1 = slots[i], p2 = slots[i + 1];
-    const isBye = !p1 || !p2;
+    // A bye only when exactly ONE side is empty. Matches where BOTH sides are
+    // empty (trailing slots that no team ever reaches) stay plain empty — they
+    // must not count as auto-qualifiers or show a fake "باي" card.
+    const isBye = (p1 && !p2) || (!p1 && p2);
     const winner = isBye ? (p1 || p2 || null) : null;
     state.matches.push({
       id: state.nextMatchId++, round: 1, position: i / 2,
@@ -1383,8 +1580,8 @@ function resetBracket() {
   state.tournamentPaused = false;
   state.tournamentFinished = false;
   state.matches = [];
-  saveState(); renderBracket(); renderMatchControls(); updateStats(); updateBracketStatus();
-  toast('تم إعادة تعيين البطولة');
+  saveState(); renderBracket(); renderMatchControls(); renderPlayers(); updateStats(); updateBracketStatus();
+  toast('تم إعادة تعيين البطولة — الآن رتّب الفرق بالأسهم في تبويب «اللاعبون» ثم ابدأ من جديد');
 }
 
 // ========== Bracket Rendering ==========
@@ -1406,10 +1603,30 @@ function renderBracket() {
   grid.classList.toggle('paused', state.tournamentPaused);
   const nameMap = buildRoundNameMap(rounds);
 
+  // With sequential (list-ordered) placement the bracket tree is padded to a
+  // power of two, so trailing round-1 slots have no team and their matches —
+  // and every later-round match fed only by them — stay empty forever. Mark
+  // those "dead" so they render as a plain dash instead of a misleading
+  // "بانتظار المتأهل" that can look like a disappeared team.
+  const maxRound = rounds[rounds.length - 1];
+  const isLive = {};
+  state.matches.forEach(m => { if (m.round === 1) isLive[m.id] = !!(m.player1Id || m.player2Id); });
+  for (let r = 2; r <= maxRound; r++) {
+    state.matches.filter(m => m.round === r).forEach(m => {
+      const pa = state.matches.find(x => x.round === r - 1 && x.position === m.position * 2);
+      const pb = state.matches.find(x => x.round === r - 1 && x.position === m.position * 2 + 1);
+      isLive[m.id] = !!(pa && isLive[pa.id]) || !!(pb && isLive[pb.id]);
+    });
+  }
+
   function slotHtml(match, playerId, isFirst) {
     const sideClass = isFirst ? 'slot-a' : 'slot-b';
     if (playerId == null) {
-      const waitingText = match.isBye ? 'باي (تأهل تلقائي)' : 'بانتظار المتأهل';
+      // Empty slots in a "dead" match are reserved tree slots that no team
+      // ever reaches (the bracket is padded to a power of two) — show them as
+      // a plain dash. Live matches keep the "waiting" label.
+      const dead = !isLive[match.id];
+      const waitingText = match.isBye ? 'باي (تأهل تلقائي)' : (dead ? '—' : 'بانتظار المتأهل');
       return '<div class="match-slot ' + sideClass + ' empty' + (match.isBye ? ' bye-indicator' : '') + '"><span class="slot-name">' + waitingText + '</span></div>';
     }
     const p = getPlayer(playerId);
@@ -1434,7 +1651,12 @@ function renderBracket() {
 
   rounds.forEach(round => {
     const matches = state.matches.filter(m => m.round === round).sort((a, b) => a.position - b.position);
-    html += '<div class="round-column"><div class="round-header">' + (nameMap[round] || 'الدور ' + round) + '</div>';
+    const byeCount = round === 1 ? matches.filter(m => m.isBye).length : 0;
+    const headerText = nameMap[round] || ('الدور ' + round);
+    const header = byeCount > 0
+      ? headerText + '<span class="round-bye-badge" title="' + byeCount + ' فريق تأهلوا تلقائياً لعدم اكتمال عدد الفرق">' + byeCount + ' تأهل تلقائي</span>'
+      : headerText;
+    html += '<div class="round-column"><div class="round-header">' + header + '</div>';
 
     matches.forEach(match => {
       const hw = match.winnerId != null;
@@ -1450,6 +1672,16 @@ function renderBracket() {
   });
 
   grid.innerHTML = html;
+  // Position each round's match cards so they align with the bracket
+  // structure (round 1 stays in flow; later rounds are placed at the exact
+  // midpoint of their two child matches). The old `space-around` CSS merely
+  // spread cards evenly, leaving rounds unaligned and the connector lines
+  // broken. Re-run once fonts are ready in case text wrapping changed
+  // heights after the first pass.
+  layoutBracket();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => layoutBracket()).catch(() => {});
+  }
   // Never let a purely cosmetic animation glitch break the functional
   // updates that follow this call in setWinner()/renderAll() (stats, match
   // controls, bracket status) — those must run regardless.
@@ -1460,6 +1692,56 @@ function renderBracket() {
     console.error('[K-Gang] animation step failed (non-fatal)', e);
   }
 }
+
+// Aligns bracket rounds vertically: every match in round r sits at the
+// midpoint of its two child matches in round r-1, matching how the export
+// image lays out. Round 1 stays in normal flow and defines the column
+// height; later rounds are absolutely positioned inside their column.
+function layoutBracket() {
+  const grid = $('#bracketGrid');
+  if (!grid) return;
+  const g = grid.getBoundingClientRect();
+  // If the grid is hidden (display:none, collapsed tab, zero-size during
+  // initial layout), every rect reads as 0 and every later-round card gets
+  // pinned to top:0 — piling them on top of each other so whole teams look
+  // "missing". Bail and let a later call (tab switch / resize / re-render)
+  // align it while actually visible.
+  if (!g.width || !g.height) return;
+  const cols = Array.from(grid.querySelectorAll('.round-column'));
+  if (cols.length < 2) return;
+
+  const first = cols[0].getBoundingClientRect().top;
+  const centers = Array.from(cols[0].querySelectorAll('.match-card')).map(c => {
+    const r = c.getBoundingClientRect();
+    return r.top + r.height / 2 - first;
+  });
+  if (centers.length < 2) return;
+
+  for (let ci = 1; ci < cols.length; ci++) {
+    const cards = Array.from(cols[ci].querySelectorAll('.match-card'));
+    cards.forEach((card, i) => {
+      const childCenter = (centers[2 * i] + centers[2 * i + 1]) / 2;
+      const h = card.getBoundingClientRect().height;
+      card.style.position = 'absolute';
+      card.style.left = '0';
+      card.style.right = '0';
+      card.style.top = (childCenter - h / 2) + 'px';
+      centers[i] = childCenter;
+    });
+  }
+}
+
+// Re-align the bracket when the viewport changes size (mobile rotation,
+// pinch-zoom, sidebar toggles). The cards in rounds 2+ are absolutely
+// positioned from round-1 centers, so any font/width reflow after the last
+// layout pass leaves them stale — overlapping each other and hiding teams.
+let _relayoutTimer;
+window.addEventListener('resize', function() {
+  clearTimeout(_relayoutTimer);
+  _relayoutTimer = setTimeout(function() {
+    try { layoutBracket(); } catch (e) {}
+  }, 150);
+});
 
 // Plays the one-shot 360° flip on whichever slot just won, if any is queued.
 function playPendingWinnerFlip() {
@@ -1702,14 +1984,14 @@ function avatarShapePath(ctx, shape, cx, cy, r) {
 }
 
 const EXPORT_FONT_STACK = "'Rajdhani', Tahoma, Arial, sans-serif";
-const EXPORT_NAME_FONT = "600 13px " + EXPORT_FONT_STACK;
-const EXPORT_ID_FONT = "400 10px 'JetBrains Mono', monospace";
-const EXPORT_PLACEHOLDER_FONT = "italic 10px " + EXPORT_FONT_STACK;
-const EXPORT_AVATAR_R = 17;
-const EXPORT_SLOT_PAD = 8;
-const EXPORT_NAME_GAP = 8;
+const EXPORT_NAME_FONT = "600 16px " + EXPORT_FONT_STACK;
+const EXPORT_ID_FONT = "400 12px 'JetBrains Mono', monospace";
+const EXPORT_PLACEHOLDER_FONT = "italic 12px " + EXPORT_FONT_STACK;
+const EXPORT_AVATAR_R = 21;
+const EXPORT_SLOT_PAD = 10;
+const EXPORT_NAME_GAP = 10;
 
-function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, side, avatarShape) {
+function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, side, avatarShape, dead) {
   const avatarR = EXPORT_AVATAR_R;
   const cyMid = y + h / 2;
   const pad = EXPORT_SLOT_PAD;
@@ -1722,7 +2004,8 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     const tx = side === 'a' ? x + w - pad : x + pad;
-    drawBidiText(ctx, match.isBye ? 'باي (تأهل تلقائي)' : 'بانتظار المتأهل', tx, cyMid, w - pad * 2);
+    const text = match.isBye ? 'باي (تأهل تلقائي)' : (dead ? '—' : 'بانتظار المتأهل');
+    drawBidiText(ctx, text, tx, cyMid, w - pad * 2);
     return;
   }
 
@@ -1767,7 +2050,7 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
     ctx.fillStyle = colors.primary;
     ctx.fillRect(cx - avatarR, cyMid - avatarR, avatarR * 2, avatarR * 2);
     ctx.fillStyle = colors.bgDeep;
-    ctx.font = "700 11px " + EXPORT_FONT_STACK;
+    ctx.font = "700 13px " + EXPORT_FONT_STACK;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.direction = 'ltr';
@@ -1905,9 +2188,22 @@ async function buildBracketExportCanvas() {
   const nameMap = buildRoundNameMap(rounds);
   const matchesByRound = rounds.map(r => state.matches.filter(m => m.round === r).sort((a, b) => a.position - b.position));
 
-  const scale = 2;
-  const cardH = 56, vsGapW = 34, gapY = 14, columnPad = 8, connStub = 8;
-  const marginX = 40, containerPad = 24, headerH = 46, topPad = 58, bottomPad = 40;
+  // Mirror the page's dead-slot rule: trailing power-of-two padding slots
+  // (and any later match fed only by them) are impossible — render them as
+  // "—" instead of a misleading "بانتظار المتأهل" row.
+  const maxRound = rounds[rounds.length - 1];
+  const isLive = {};
+  state.matches.forEach(m => { if (m.round === 1) isLive[m.id] = !!(m.player1Id || m.player2Id); });
+  for (let r = 2; r <= maxRound; r++) {
+    state.matches.filter(m => m.round === r).forEach(m => {
+      const pa = state.matches.find(x => x.round === r - 1 && x.position === m.position * 2);
+      const pb = state.matches.find(x => x.round === r - 1 && x.position === m.position * 2 + 1);
+      isLive[m.id] = !!(pa && isLive[pa.id]) || !!(pb && isLive[pb.id]);
+    });
+  }
+
+  const cardH = 64, vsGapW = 38, gapY = 18, columnPad = 10, connStub = 10;
+  const marginX = 48, containerPad = 28, headerH = 54, topPad = 66, bottomPad = 48;
 
   // Size the card to whatever the longest name/id in THIS tournament
   // actually needs, instead of a fixed width that clips real names with
@@ -1917,7 +2213,7 @@ async function buildBracketExportCanvas() {
   // existing ellipsis truncation only past that point).
   const neededTextW = measureExportSlotContentWidth(state.matches) + 4;
   const neededHalfW = EXPORT_SLOT_PAD * 2 + EXPORT_AVATAR_R * 2 + EXPORT_NAME_GAP + neededTextW;
-  const halfW = Math.min(Math.max(neededHalfW, (230 - vsGapW) / 2), 320);
+  const halfW = Math.min(Math.max(neededHalfW, (280 - vsGapW) / 2), 400);
   const cardW = halfW * 2 + vsGapW;
   const columnW = cardW + columnPad * 2;
 
@@ -1933,10 +2229,27 @@ async function buildBracketExportCanvas() {
   const containerBottom = cardsTop + contentH + containerPad;
   const cssH = containerBottom + bottomPad;
 
+  // Aim for a crisp 4x export (up from the previous fixed 3x) but never
+  // exceed a canvas pixel size that some browsers (older/mobile Safari in
+  // particular) refuse to allocate or rasterize — that used to be a hidden
+  // cause of "export produces a blank/blurry image" on large brackets. If a
+  // huge bracket (many rounds/long names) would blow past that ceiling, we
+  // scale back down just enough to stay safely under it instead of failing.
+  const EXPORT_MAX_DIM = 8192;
+  const desiredScale = 4;
+  const scale = Math.max(1, Math.min(desiredScale, EXPORT_MAX_DIM / Math.max(cssW, cssH)));
+
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(cssW * scale);
   canvas.height = Math.ceil(cssH * scale);
   const ctx = canvas.getContext('2d');
+  // Without this, browsers default to a lower-quality (sometimes literally
+  // "low") resampling filter when drawImage() has to upscale/downscale an
+  // avatar, logo, or background photo onto the canvas — this was the main
+  // source of blurry/pixelated images and logos in exports even though the
+  // bracket itself was drawn at high resolution.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.scale(scale, scale);
 
   await drawExportBackground(ctx, cssW, cssH, colors);
@@ -1948,11 +2261,11 @@ async function buildBracketExportCanvas() {
     try {
       const logoImg = await loadAvatarSafely(teamLogoUrl);
       if (logoImg && logoImg.width > 0) {
-        const logoH = 20;
+        const logoH = 26;
         const logoW = logoImg.width > logoImg.height
           ? logoH * (logoImg.width / logoImg.height)
           : logoH;
-        ctx.drawImage(logoImg, cssW / 2 - logoW / 2, topPad - 14 - logoH - 12, logoW, logoH);
+        ctx.drawImage(logoImg, cssW / 2 - logoW / 2, topPad - 18 - logoH - 14, logoW, logoH);
       }
     } catch (e) { /* logo is decorative — never fail the whole export for it */ }
   }
@@ -1961,7 +2274,7 @@ async function buildBracketExportCanvas() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = colors.textPrimary;
-  ctx.font = "700 22px " + EXPORT_FONT_STACK;
+  ctx.font = "700 26px " + EXPORT_FONT_STACK;
   drawBidiText(ctx, state.settings.name || 'K-Gang Tournament', cssW / 2, topPad - 14, cssW - marginX * 2);
 
   // The dark rounded container the on-page bracket lives in
@@ -2001,7 +2314,7 @@ async function buildBracketExportCanvas() {
   // between columns (the gradient fade line from `.round-column::after`).
   rounds.forEach((round, r) => {
     const colX = gridX + r * columnW;
-    ctx.font = "700 11px " + EXPORT_FONT_STACK;
+    ctx.font = "700 14px " + EXPORT_FONT_STACK;
     ctx.fillStyle = colors.textMuted;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -2030,7 +2343,7 @@ async function buildBracketExportCanvas() {
 
   // Bracket connectors between round r and r+1 — muted stubs + a vertical
   // link, highlighted in primary for matches that already have a winner.
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   for (let r = 0; r < rounds.length - 1; r++) {
     const colX = gridX + r * columnW;
     const cardRight = colX + columnPad + cardW;
@@ -2095,10 +2408,11 @@ async function buildBracketExportCanvas() {
       }
 
       const halfW = (cardW - vsGapW) / 2;
-      drawExportSlot(ctx, match, match.player1Id, x, y, halfW, cardH, colors, avatarCache, 'a', avatarShape);
-      drawExportSlot(ctx, match, match.player2Id, x + halfW + vsGapW, y, halfW, cardH, colors, avatarCache, 'b', avatarShape);
+      const dead = !isLive[match.id];
+      drawExportSlot(ctx, match, match.player1Id, x, y, halfW, cardH, colors, avatarCache, 'a', avatarShape, dead);
+      drawExportSlot(ctx, match, match.player2Id, x + halfW + vsGapW, y, halfW, cardH, colors, avatarCache, 'b', avatarShape, dead);
 
-      ctx.font = "700 9px " + EXPORT_FONT_STACK;
+      ctx.font = "700 12px " + EXPORT_FONT_STACK;
       ctx.fillStyle = match.winnerId ? colors.primaryLight : colors.textMuted;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -2117,11 +2431,11 @@ async function buildBracketExportCanvas() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffc107';
-    ctx.font = "700 28px " + EXPORT_FONT_STACK;
-    drawBidiText(ctx, 'البطولة موقوفة مؤقتاً', cssW / 2, (containerTop + containerBottom) / 2 - 14, containerW - marginX * 2);
+    ctx.font = "700 34px " + EXPORT_FONT_STACK;
+    drawBidiText(ctx, 'البطولة موقوفة مؤقتاً', cssW / 2, (containerTop + containerBottom) / 2 - 16, containerW - marginX * 2);
     ctx.fillStyle = colors.textMuted;
-    ctx.font = "400 14px " + EXPORT_FONT_STACK;
-    drawBidiText(ctx, 'المباريات متوقفة حتى استئناف البطولة', cssW / 2, (containerTop + containerBottom) / 2 + 16, containerW - marginX * 2);
+    ctx.font = "400 18px " + EXPORT_FONT_STACK;
+    drawBidiText(ctx, 'المباريات متوقفة حتى استئناف البطولة', cssW / 2, (containerTop + containerBottom) / 2 + 20, containerW - marginX * 2);
     ctx.restore();
   }
 
@@ -2166,7 +2480,7 @@ async function exportBracketAsPDF() {
       format: [canvas.width, canvas.height],
       hotfixes: ['px_scaling']
     });
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, canvas.width, canvas.height);
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
     pdf.save(exportFileBaseName() + '.pdf');
     toast('تم تصدير الجدول كملف PDF');
   } catch (e) {
@@ -2200,6 +2514,13 @@ function switchTab(tab) {
   if (tab === 'settings') updateDefaultPasswordWarning();
   if (tab === 'theme') renderThemeTab();
   if (tab === 'effects') renderEffectsTab();
+  if (tab === 'manage') {
+    // The bracket may have been laid out while its container was hidden
+    // (display:none makes every rect read as 0, which would pin all
+    // later-round cards at top:0 and hide most teams). Align it now that
+    // it's actually visible — harmless when it already is.
+    requestAnimationFrame(function() { try { layoutBracket(); } catch (e) {} });
+  }
 }
 
 function updateDefaultPasswordWarning() {

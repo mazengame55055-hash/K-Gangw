@@ -161,8 +161,13 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label for="playerAvatar">رابط الصورة (Discord CDN)</label>
+              <label for="playerAvatar">صورة الفريق (رابط Discord أو رفع صورة)</label>
               <input type="url" id="playerAvatar" placeholder="https://cdn.discordapp.com/avatars/...">
+              <div class="avatar-upload-row">
+                <input type="file" id="playerAvatarFile" accept="image/*" class="hidden-file" onchange="handlePlayerAvatarUpload(event)">
+                <label for="playerAvatarFile" class="btn-secondary avatar-upload-btn">⬆ رفع صورة من جهازك</label>
+                <img id="avatarPreview" class="avatar-preview" style="display:none;" alt="معاينة الصورة">
+              </div>
             </div>
           </div>
           <button type="submit" class="btn-primary">
@@ -170,11 +175,13 @@
             إضافة لاعب
           </button>
         </form>
+        <div id="pairingPreview"></div>
         <div class="players-list-header">
           <span>قائمة اللاعبين (<span id="playersCount">0</span>)</span>
           <button class="btn-danger-small" onclick="clearAllPlayers()">حذف الكل</button>
         </div>
         <div class="players-list" id="playersList"></div>
+        <input type="file" id="playerRowImage" accept="image/*" style="display:none;" onchange="applyPlayerRowImage(event)">
       </div>
 
       <!-- Settings Tab -->
@@ -559,6 +566,6 @@
 
   <!-- JSONBin.io — shared cloud storage so all visitors see the same data.
        Plain fetch() calls in script.js, no external SDK needed. -->
-  <script src="script.js?v=20260802j"></script>
+  <script src="script.js?v=20260803a"></script>
 </body>
 </html>
