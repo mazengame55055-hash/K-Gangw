@@ -304,7 +304,45 @@ function startPolling() {
 
 
 // ========== Helpers ==========
+// خريطة أسماء الفرق → [إيموجي احتياطي، لون، رابط صورة حقيقية]. أي اسم موجود في
+// الخريطة هيعرض صورة حقيقية من الإنترنت في كل حتة (القايمة، المخطط، التصدير،
+// نافذة البطل) — نفس الاسم → نفس الصورة دايمًا. لو الصورة النت فضلت/اتقطعت،
+// بيفضل الإيموجي كصورة احتياطية، وبعده الحرف الأول.
+const TEAM_AVATARS = {
+  'الحمام الممتاز':             ['🕊️', '#5b7cfa', 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Rock_Pigeon_white.jpg/500px-Rock_Pigeon_white.jpg'],
+  'نظام الطيبات':               ['🍗', '#e67e22', 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Fried-Chicken-Leg.jpg/500px-Fried-Chicken-Leg.jpg'],
+  'المتأهل':                    ['🏆', '#d4a017', 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Gold_Trophy.jpg/500px-Gold_Trophy.jpg'],
+  'sweety force':               ['💖', '#e91e8c', 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/Gold_Trophy.jpg/500px-Gold_Trophy.jpg'],
+  'الحمامجية':                  ['🐦', '#16a085', 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Pigeons_fly.jpg/500px-Pigeons_fly.jpg'],
+  'الفرحة 🎀':                  ['🎀', '#f06292', 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Confetti_%285879576562%29.jpg/500px-Confetti_%285879576562%29.jpg'],
+  'كبار السن':                  ['👴', '#7f8c8d', 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Happy_Old_Man.jpg/500px-Happy_Old_Man.jpg'],
+  '💪 احنا معندناش وبقى عندنا': ['💪', '#e74c3c', 'https://upload.wikimedia.org/wikipedia/commons/5/5c/Arm_flex_pronate.jpg'],
+  'Food Cord':                  ['🍔', '#d68910', 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Quick_Burger_hamburgers_and_fries.jpg/500px-Quick_Burger_hamburgers_and_fries.jpg'],
+  'ملل':                        ['🥱', '#95a5a6', 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bored_Man.jpg/500px-Bored_Man.jpg'],
+  'TEAM':                       ['👥', '#3498db', 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/Group_of_people_talking.jpg/500px-Group_of_people_talking.jpg'],
+  'القهوة':                     ['☕', '#a0522d', 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Espresso_in_Espressotasse_von_Julius_Meinl_aus_Wien_1.JPG/500px-Espresso_in_Espressotasse_von_Julius_Meinl_aus_Wien_1.JPG'],
+  'فرنة بلخة':                  ['🥖', '#ca9b65', 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Bread_-_Ekmek.jpg/500px-Bread_-_Ekmek.jpg'],
+  'الحبة الكاملة':              ['🌾', '#7d8a2e', 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Golden_wheat_field_2.jpg/500px-Golden_wheat_field_2.jpg'],
+  '3H':                         ['🎧', '#8e44ad', 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Woman_listening_to_music_with_wireless_headphones_neon_light_%2850810419882%29.jpg/500px-Woman_listening_to_music_with_wireless_headphones_neon_light_%2850810419882%29.jpg'],
+  '404 حمام':                   ['❓', '#566573', 'https://upload.wikimedia.org/wikipedia/commons/8/8a/404_File_not_found.png'],
+  'Team X':                     ['❌', '#c0392b', 'https://upload.wikimedia.org/wikipedia/commons/8/81/Red_Letter_X_on_a_black_background.png']
+};
+
+function teamAvatarUrl(name) {
+  const known = TEAM_AVATARS[(name || '').trim()];
+  return (known && known[2]) || '';
+}
+
+function teamEmojiAvatar(emoji, color) {
+  return 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27128%27 height=%27128%27%3E' +
+    '%3Crect fill=%27%23' + String(color).replace(/^#/, '') + '%27 width=%27128%27 height=%27128%27/%3E' +
+    '%3Ctext x=%2764%27 y=%2792%27 text-anchor=%27middle%27 fill=%27%23ffffff%27 font-size=%2770%27%3E' +
+    encodeURIComponent(emoji) + '%3C/text%3E%3C/svg%3E';
+}
+
 function defaultAvatar(name) {
+  const known = TEAM_AVATARS[(name || '').trim()];
+  if (known) return teamEmojiAvatar(known[0], known[1]);
   let c = (name || '?').trim().charAt(0).toUpperCase();
   // Only allow a single safe letter/digit character into the generated SVG.
   // (Prevents a crafted player name from breaking out of the data URI / markup it's embedded in.)
@@ -352,7 +390,7 @@ function escapeAttr(s) {
 // Anything else (javascript:, a crafted string with quotes/onerror=, etc.)
 // falls back to a generated default avatar instead of being trusted.
 function sanitizeAvatarUrl(url, name) {
-  const fallback = defaultAvatar(name);
+  const fallback = teamAvatarUrl(name) || defaultAvatar(name);
   if (!url || typeof url !== 'string') return fallback;
   const trimmed = url.trim();
   if (/^data:image\/(svg\+xml|png|jpe?g|webp|gif);/i.test(trimmed)) return trimmed;
@@ -388,6 +426,74 @@ function toast(msg, type) {
   t.textContent = msg;
   $('#toastContainer').appendChild(t);
   setTimeout(() => { t.classList.add('removing'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+// ========== شاشة التحميل ==========
+function hideLoader() {
+  const l = $('#loaderScreen');
+  if (!l || l.classList.contains('hide')) return;
+  l.classList.add('hide');
+  setTimeout(() => l.remove(), 600); // امسحها من الـ DOM خالص
+}
+window.addEventListener('load', hideLoader);
+setTimeout(hideLoader, 3500); // شبكة بطيئة؟ ما نحبسش الزائر أكتر من 3.5 ثانية
+
+// ========== كونفيتي البطل ==========
+function launchChampionConfetti() {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'confetti-canvas';
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+
+  // دهب + ألوان الثيم الحالي — الكونفيتي بيتغير مع الثيم تلقائياً
+  const colors = ['#ffd700', '#fff6d0', '#ffffff'];
+  try {
+    const cs = getComputedStyle(document.documentElement);
+    const p = (cs.getPropertyValue('--primary') || '').trim();
+    const pl = (cs.getPropertyValue('--primary-light') || '').trim();
+    if (p) colors.push(p);
+    if (pl) colors.push(pl);
+  } catch (e) {}
+
+  const parts = [];
+  for (let i = 0; i < 140; i++) {
+    parts.push({
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * canvas.height * 0.5,
+      w: 5 + Math.random() * 6,
+      h: 8 + Math.random() * 9,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      vy: 2 + Math.random() * 3.5,
+      vx: -1.5 + Math.random() * 3,
+      rot: Math.random() * Math.PI,
+      vr: -0.12 + Math.random() * 0.24,
+      sway: Math.random() * Math.PI * 2
+    });
+  }
+
+  const start = performance.now();
+  (function frame(now) {
+    const t = (now || performance.now()) - start;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+    parts.forEach(p => {
+      p.y += p.vy;
+      p.x += p.vx + Math.sin(p.sway + t / 400) * 0.6;
+      p.rot += p.vr;
+      if (p.y < canvas.height + 30) alive = true;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    });
+    if (alive && t < 6000) requestAnimationFrame(frame);
+    else canvas.remove();
+  })(performance.now());
 }
 
 // ========== Theme Engine ==========
@@ -730,16 +836,20 @@ let swapMode = false;
 let swapFirstId = null;
 
 function toggleSwapMode() {
-  if (!swapMode) {
-    if (!state.tournamentStarted) { toast('ابدأ البطولة الأول — قبل البدء استخدم أسهم ▲▼', 'error'); return; }
-    if (state.tournamentFinished) { toast('البطولة انتهت — مفيش تبديل بعد النهاية', 'error'); return; }
+  // الخروج مسموح دائماً — الحارس يمنع الدخول بس
+  if (swapMode) {
+    swapMode = false; swapFirstId = null;
+    document.body.classList.remove('swap-mode');
+    const b = $('#swapModeBtn'); if (b) b.classList.remove('active');
+    toast('تم إيقاف وضع التبديل');
+    return;
   }
-  swapMode = !swapMode;
-  swapFirstId = null;
-  document.body.classList.toggle('swap-mode', swapMode);
-  const btn = $('#swapModeBtn');
-  if (btn) btn.classList.toggle('active', swapMode);
-  toast(swapMode ? '🔁 وضع التبديل شغال — اضغط على فريقين في المخطط' : 'تم إيقاف وضع التبديل');
+  if (!state.tournamentStarted) { toast('ابدأ البطولة الأول — قبل البدء استخدم أسهم ▲▼', 'error'); return; }
+  if (state.tournamentFinished) { toast('البطولة انتهت — مفيش تبديل بعد النهاية', 'error'); return; }
+  swapMode = true; swapFirstId = null;
+  document.body.classList.add('swap-mode');
+  const b = $('#swapModeBtn'); if (b) b.classList.add('active');
+  toast('🔁 وضع التبديل شغال — اضغط على فريقين في المخطط');
 }
 
 // الفريق مسموح تبديله طالما ما لعبش مباراة حقيقية محسومة (الباي مش مانع)
@@ -1596,7 +1706,8 @@ function generateBracket() {
     state.matches.push({
       id: state.nextMatchId++, round: 1, position: i / 2,
       player1Id: p1 ? p1.id : null, player2Id: p2 ? p2.id : null,
-      winnerId: winner ? winner.id : null, isBye
+      winnerId: winner ? winner.id : null, isBye,
+      score1: null, score2: null
     });
   }
 
@@ -1605,7 +1716,8 @@ function generateBracket() {
     for (let p = 0; p < c; p++) {
       state.matches.push({
         id: state.nextMatchId++, round: r, position: p,
-        player1Id: null, player2Id: null, winnerId: null, isBye: false
+        player1Id: null, player2Id: null, winnerId: null, isBye: false,
+        score1: null, score2: null
       });
     }
   }
@@ -1654,6 +1766,8 @@ function setWinner(matchId, playerId) {
   saveState(); renderBracket(); renderMatchControls(); updateStats(); updateBracketStatus();
 }
 
+// يعيّن نقاط مباراة من خانة «النتيجة» في لوحة المباريات. لما الجانبين يبقى
+// ليهم نقاط، الفائز بيتحدد تلقائياً بالأعلى — والتعادل يلغي أي فائز سابق.
 function autoAdvance(matchId, winnerId) {
   const match = state.matches.find(m => m.id === matchId);
   if (!match) return;
@@ -1672,9 +1786,9 @@ function clearDownstream(match) {
   if (!match) return;
   const next = state.matches.find(m => m.round === match.round + 1 && m.position === Math.floor(match.position / 2));
   if (!next) return;
-  if (match.position % 2 === 0) next.player1Id = null;
-  else next.player2Id = null;
-  if (next.winnerId) { next.winnerId = null; next.isBye = false; clearDownstream(next); }
+  if (match.position % 2 === 0) { next.player1Id = null; next.score1 = null; }
+  else { next.player2Id = null; next.score2 = null; }
+  if (next.winnerId) { next.winnerId = null; next.isBye = false; next.score1 = null; next.score2 = null; clearDownstream(next); }
 }
 
 function togglePause() {
@@ -1702,6 +1816,21 @@ function undoLastResult() {
     }
   }
   toast('مفيش نتائج للتراجع عنها', 'error');
+}
+
+// ========== درجات النتائج (Score Chips) ==========
+// بتتحفظ جوه كائن الماتش نفسه (score1 / score2) فبتتزامن للسحابة تلقائياً
+// من غير أي تغيير في SYNCED_FIELDS. فاضي = مفيش شيب.
+function updateMatchScore(matchId, side, value) {
+  if (state.isLocked) { toast('يجب فتح لوحة التحكم أولاً', 'error'); return; }
+  const match = state.matches.find(m => m.id === matchId);
+  if (!match) return;
+  const n = parseInt(value, 10);
+  const v = (value === '' || isNaN(n)) ? null : Math.max(0, Math.min(99, n));
+  if (side === 1) match.score1 = v;
+  else match.score2 = v;
+  saveState();
+  renderBracket(); // الشيب يظهر فوراً في المخطط — من غير renderMatchControls عشان التركيز ما يضيعش من الحقل
 }
 
 function resetBracket() {
@@ -1773,6 +1902,7 @@ function renderBracket() {
     const p = getPlayer(playerId);
     const iw = match.winnerId === playerId;
     const locked = state.isLocked ? ' locked' : '';
+    const scoreVal = isFirst ? match.score1 : match.score2;
     return '<div class="match-slot ' + sideClass + (iw ? ' winner' : '') + locked + (swapMode && swapFirstId === playerId ? ' swap-selected' : '') + '" data-match="' + match.id + '" data-player="' + playerId + '">' +
       (p
         ? '<span class="avatar-frame"><img class="slot-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'"></span>'
@@ -1781,6 +1911,7 @@ function renderBracket() {
         '<span class="slot-name-row"><span class="slot-name">' + (p ? escapeHtml(p.name) : '—') + '</span>' + (match.isBye ? '<span class="bye-tag">BYE</span>' : '') + '</span>' +
         (p && p.discordId ? '<span class="slot-id">' + escapeHtml(p.discordId) + '</span>' : '') +
       '</div>' +
+      (scoreVal != null ? '<span class="score-chip">' + escapeHtml(String(scoreVal)) + '</span>' : '') +
       '</div>';
   }
 
@@ -1987,9 +2118,11 @@ function renderMatchControls() {
 
       rHtml += '<div class="mc-match' + (hasWinner ? ' mc-done' : '') + (state.tournamentPaused ? ' mc-paused' : '') + '">';
       rHtml += '<div class="mc-players">';
+      rHtml += '<input class="mc-score" type="number" min="0" max="99" inputmode="numeric" placeholder="–" value="' + (m.score1 != null ? m.score1 : '') + '" onchange="updateMatchScore(' + m.id + ',1,this.value)" title="نتيجة ' + escapeHtml(p1Name) + '" ' + (disabled ? 'disabled' : '') + '>';
       rHtml += '<button class="mc-btn' + (m.winnerId === m.player1Id ? ' mc-winner' : '') + '" onclick="setWinner(' + m.id + ',' + m.player1Id + ')" ' + (disabled ? 'disabled' : '') + '>' + escapeHtml(p1Name) + '</button>';
       rHtml += '<span class="mc-vs">VS</span>';
       rHtml += '<button class="mc-btn' + (m.winnerId === m.player2Id ? ' mc-winner' : '') + '" onclick="setWinner(' + m.id + ',' + m.player2Id + ')" ' + (!m.player2Id || state.tournamentPaused ? 'disabled' : '') + '>' + escapeHtml(p2Name) + '</button>';
+      rHtml += '<input class="mc-score" type="number" min="0" max="99" inputmode="numeric" placeholder="–" value="' + (m.score2 != null ? m.score2 : '') + '" onchange="updateMatchScore(' + m.id + ',2,this.value)" title="نتيجة ' + escapeHtml(p2Name) + '" ' + (!m.player2Id || state.tournamentPaused ? 'disabled' : '') + '>';
       rHtml += '</div>';
       if (m.isBye) rHtml += '<span class="mc-bye">باي</span>';
       rHtml += '</div>';
@@ -2157,7 +2290,7 @@ function avatarShapePath(ctx, shape, cx, cy, r) {
   }
 }
 
-const EXPORT_FONT_STACK = "'Rajdhani', Tahoma, Arial, sans-serif";
+const EXPORT_FONT_STACK = "'Rajdhani', 'Cairo', Tahoma, Arial, sans-serif";
 const EXPORT_NAME_FONT = "600 16px " + EXPORT_FONT_STACK;
 const EXPORT_ID_FONT = "400 12px 'JetBrains Mono', monospace";
 const EXPORT_PLACEHOLDER_FONT = "italic 12px " + EXPORT_FONT_STACK;
@@ -2165,55 +2298,82 @@ const EXPORT_AVATAR_R = 21;
 const EXPORT_SLOT_PAD = 10;
 const EXPORT_NAME_GAP = 10;
 
+// بار بحافة خارجية مائلة (slash) — نفس لغة الصورة المرجعية
+function barPath(ctx, x, y, w, h, side, cut) {
+  ctx.beginPath();
+  if (side === 'a') {
+    ctx.moveTo(x + cut, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x, y + h);
+  } else {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + w - cut, y);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x, y + h);
+  }
+  ctx.closePath();
+}
 function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, side, avatarShape, dead) {
-  const avatarR = EXPORT_AVATAR_R;
+  const avatarR = EXPORT_AVATAR_R - 2;
   const cyMid = y + h / 2;
   const pad = EXPORT_SLOT_PAD;
-  const align = side === 'a' ? 'right' : 'left';
   const shape = avatarShape || 'circle';
 
   if (playerId == null) {
+    // شبح بار باهت لنفس شكل السلوت الفاضي
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    barPath(ctx, x + 2, y + 5, w - 4, h - 10, side, 9);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.045)';
+    ctx.fill();
+    ctx.restore();
     ctx.fillStyle = colors.textMuted;
     ctx.font = EXPORT_PLACEHOLDER_FONT;
-    ctx.textAlign = align;
+    ctx.textAlign = side === 'a' ? 'right' : 'left';
     ctx.textBaseline = 'middle';
-    const tx = side === 'a' ? x + w - pad : x + pad;
-    const text = match.isBye ? 'باي (تأهل تلقائي)' : (dead ? '—' : 'بانتظار المتأهل');
-    drawBidiText(ctx, text, tx, cyMid, w - pad * 2);
+    const tx = side === 'a' ? x + w - pad - 6 : x + pad + 6;
+    drawBidiText(ctx, match.isBye ? 'باي (تأهل تلقائي)' : (dead ? '—' : 'بانتظار المتأهل'), tx, cyMid, w - pad * 2 - 12);
     return;
   }
 
   const isWinner = match.winnerId != null && match.winnerId === playerId;
   const p = getPlayer(playerId);
   const name = p ? p.name : '—';
-  // Avatar sits at the inner edge of the slot (closest to the "vs" gap);
-  // side 'a' is the visual-left slot so its inner edge is its right side.
-  const cx = side === 'a' ? (x + w - pad - avatarR) : (x + pad + avatarR);
 
-  // Gradient glow ring behind the avatar — mirrors the on-page
-  // `.avatar-frame::before` frame. Drawn slightly larger than the avatar so
-  // only its edge peeks out once the avatar is clipped on top of it.
+  // ===== البار المتدرج بحافة مائلة =====
+  const bx = x + 2, by = y + 5, bw = w - 4, bh = h - 10;
+  barPath(ctx, bx, by, bw, bh, side, 9);
+  const grad = ctx.createLinearGradient(side === 'a' ? bx + bw : bx, 0, side === 'a' ? bx : bx + bw, 0);
+  if (isWinner) { grad.addColorStop(0, colors.primary); grad.addColorStop(1, colors.primaryLight); }
+  else { grad.addColorStop(0, colors.primaryDark); grad.addColorStop(1, colors.primary); }
+  ctx.fillStyle = grad;
+  ctx.fill();
+  if (isWinner) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.65)';
+    ctx.lineWidth = 1.2;
+    barPath(ctx, bx, by, bw, bh, side, 9);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ===== الأفاتار بحلقة متوهجة على الحافة الداخلية =====
+  const cx = side === 'a' ? (x + w - pad - avatarR - 2) : (x + pad + avatarR + 2);
   const ringR = avatarR + 2.5;
   ctx.save();
   const ringGrad = ctx.createLinearGradient(cx - ringR, cyMid - ringR, cx + ringR, cyMid + ringR);
   if (isWinner) {
-    ringGrad.addColorStop(0, '#ffd700');
-    ringGrad.addColorStop(0.55, '#fff6d0');
-    ringGrad.addColorStop(1, '#ffd700');
-    ctx.shadowColor = 'rgba(255, 215, 0, 0.55)';
-    ctx.shadowBlur = 10;
+    ringGrad.addColorStop(0, '#ffd700'); ringGrad.addColorStop(0.55, '#fff6d0'); ringGrad.addColorStop(1, '#ffd700');
+    ctx.shadowColor = 'rgba(255, 215, 0, 0.55)'; ctx.shadowBlur = 10;
   } else {
-    ringGrad.addColorStop(0, colors.primary);
-    ringGrad.addColorStop(0.55, colors.primaryLight);
-    ringGrad.addColorStop(1, colors.primary);
-    ctx.shadowColor = colors.primaryGlow;
-    ctx.shadowBlur = 6;
+    ringGrad.addColorStop(0, 'rgba(255,255,255,0.8)'); ringGrad.addColorStop(0.55, '#ffffff'); ringGrad.addColorStop(1, 'rgba(255,255,255,0.8)');
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)'; ctx.shadowBlur = 6;
   }
   avatarShapePath(ctx, shape, cx, cyMid, ringR);
   ctx.fillStyle = ringGrad;
   ctx.fill();
   ctx.restore();
-
   ctx.save();
   avatarShapePath(ctx, shape, cx, cyMid, avatarR);
   ctx.clip();
@@ -2221,39 +2381,57 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
   if (img) {
     ctx.drawImage(img, cx - avatarR, cyMid - avatarR, avatarR * 2, avatarR * 2);
   } else {
-    ctx.fillStyle = colors.primary;
-    ctx.fillRect(cx - avatarR, cyMid - avatarR, avatarR * 2, avatarR * 2);
     ctx.fillStyle = colors.bgDeep;
+    ctx.fillRect(cx - avatarR, cyMid - avatarR, avatarR * 2, avatarR * 2);
+    ctx.fillStyle = colors.primaryLight;
     ctx.font = "700 13px " + EXPORT_FONT_STACK;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.direction = 'ltr';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr';
     ctx.fillText((name || '?').trim().charAt(0).toUpperCase(), cx, cyMid + 1);
   }
   ctx.restore();
 
-  // Name (and discord id, if set) sit on the outer side of the avatar,
-  // away from the "vs" gap — mirrors the on-page slot-info stack.
+  // ===== الاسم أبيض عريض + معرف ديسكورد شفاف =====
+  const scoreVal = match ? (side === 'a' ? match.score1 : match.score2) : null;
+  const hasScore = scoreVal != null && scoreVal !== '' && !isNaN(Number(scoreVal));
   const seedTxt = (p && p.seed) ? '#' + p.seed : '';
-  const seedW = seedTxt ? 24 : 0;
+  const outerW = hasScore ? 26 : (seedTxt ? 22 : 0);
   const textX = side === 'a' ? cx - avatarR - EXPORT_NAME_GAP : cx + avatarR + EXPORT_NAME_GAP;
-  const maxTextW = (side === 'a' ? (textX - (x + pad)) : ((x + w - pad) - textX)) - seedW;
+  const maxTextW = (side === 'a' ? (textX - (x + pad + 2)) : ((x + w - pad - 2) - textX)) - outerW;
   const hasId = !!(p && p.discordId);
-  ctx.textAlign = align;
+  ctx.textAlign = side === 'a' ? 'right' : 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = isWinner ? '#ffd700' : colors.textSecondary;
-  ctx.font = isWinner ? "700 13px " + EXPORT_FONT_STACK : EXPORT_NAME_FONT;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = "700 14px " + EXPORT_FONT_STACK;
   drawBidiText(ctx, name, textX, cyMid - (hasId ? 6 : 0), maxTextW);
   if (hasId) {
     ctx.font = EXPORT_ID_FONT;
-    ctx.fillStyle = colors.textMuted;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
     ctx.direction = 'ltr';
-    ctx.textAlign = align;
+    ctx.textAlign = side === 'a' ? 'right' : 'left';
     ctx.fillText(fitText(ctx, p.discordId, maxTextW), textX, cyMid + 8);
   }
-  if (seedTxt) {
-    ctx.font = "600 10px " + EXPORT_FONT_STACK;
-    ctx.fillStyle = colors.textMuted;
+
+  // ===== شيب النتيجة الأبيض/الدهب أو البذرة على الحافة الخارجية =====
+  if (hasScore) {
+    const cw = 20, chh = 22, cut = 6;
+    const cx0 = side === 'a' ? x + 5 : x + w - 5 - cw;
+    const cy0 = cyMid - chh / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx0, cy0);
+    ctx.lineTo(cx0 + cw, cy0);
+    ctx.lineTo(cx0 + cw, cy0 + chh - cut);
+    ctx.lineTo(cx0 + cw - cut, cy0 + chh);
+    ctx.lineTo(cx0, cy0 + chh);
+    ctx.closePath();
+    ctx.fillStyle = isWinner ? '#ffd700' : '#f5f2ea';
+    ctx.fill();
+    ctx.fillStyle = '#171410';
+    ctx.font = '800 12px ' + EXPORT_FONT_STACK;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr';
+    ctx.fillText(String(scoreVal), cx0 + cw / 2, cyMid + 1);
+  } else if (seedTxt) {
+    ctx.font = "700 10px " + EXPORT_FONT_STACK;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.textAlign = side === 'a' ? 'left' : 'right';
     ctx.textBaseline = 'middle';
     ctx.direction = 'ltr';
@@ -2359,6 +2537,7 @@ async function buildBracketExportCanvas() {
     bgSurface: v('--bg-surface', '#1b1822'),
     border: v('--border', '#332f3d'),
     primary: v('--primary', '#9184c9'),
+    primaryDark: v('--primary-dark', '#6e5fa8'),
     primaryLight: v('--primary-light', '#c4bce2'),
     primaryGlow: v('--primary-glow', 'rgba(145, 132, 201, 0.35)'),
     textPrimary: v('--text-primary', '#ece8f5'),
@@ -2386,7 +2565,7 @@ async function buildBracketExportCanvas() {
     });
   }
 
-  const scale = 3;
+  const scale = 4; // أقصى وضوح ممكن — الصورة تطلع حادة على أي شاشة
   const cardH = 64, vsGapW = 38, gapY = 18, columnPad = 10, connStub = 10;
   const marginX = 48, containerPad = 28, headerH = 54, topPad = 66;
 
@@ -2425,6 +2604,16 @@ async function buildBracketExportCanvas() {
   ctx.scale(scale, scale);
 
   await drawExportBackground(ctx, cssW, cssH, colors);
+
+  // شظايا هندسية قطرية + زوايا دهب — لغة تصميم البث
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+  ctx.beginPath(); ctx.moveTo(cssW * 0.55, 0); ctx.lineTo(cssW * 0.75, 0); ctx.lineTo(cssW * 0.45, cssH); ctx.lineTo(cssW * 0.25, cssH); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cssW * 0.88, 0); ctx.lineTo(cssW, 0); ctx.lineTo(cssW, cssH * 0.55); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(210, 169, 92, 0.10)';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(90, 0); ctx.lineTo(0, 90); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cssW, cssH); ctx.lineTo(cssW - 90, cssH); ctx.lineTo(cssW, cssH - 90); ctx.closePath(); ctx.fill();
+  ctx.restore();
 
   // Team logo — the admin-uploaded crest drawn centered above the title,
   // matching the hero layout on the page. Skipped when no logo is set.
@@ -2486,12 +2675,12 @@ async function buildBracketExportCanvas() {
   // between columns (the gradient fade line from `.round-column::after`).
   rounds.forEach((round, r) => {
     const colX = gridX + r * columnW;
-    ctx.font = "700 14px " + EXPORT_FONT_STACK;
-    ctx.fillStyle = colors.textMuted;
+    ctx.font = "800 14px " + EXPORT_FONT_STACK;
+    ctx.fillStyle = '#d2a95c';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     drawBidiText(ctx, nameMap[round] || ('الدور ' + round), colX + columnW / 2, gridTop + headerH - 16, columnW - 8);
-    ctx.strokeStyle = colors.border;
+    ctx.strokeStyle = 'rgba(210, 169, 92, 0.4)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(colX, gridTop + headerH - 5);
@@ -2524,7 +2713,7 @@ async function buildBracketExportCanvas() {
     matchesByRound[r + 1].forEach((nm, ni) => {
       const y0 = yPos[r][2 * ni], y1 = yPos[r][2 * ni + 1], nextCy = yPos[r + 1][ni];
       const winner = nm.winnerId != null;
-      ctx.strokeStyle = winner ? colors.primary : colors.border;
+      ctx.strokeStyle = winner ? '#d2a95c' : colors.border;
       ctx.globalAlpha = winner ? 0.9 : 0.55;
       ctx.beginPath(); ctx.moveTo(cardRight, y0); ctx.lineTo(vx, y0); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(cardRight, y1); ctx.lineTo(vx, y1); ctx.stroke();
@@ -2532,7 +2721,7 @@ async function buildBracketExportCanvas() {
       ctx.strokeStyle = colors.border;
       ctx.beginPath(); ctx.moveTo(vx, y0); ctx.lineTo(vx, y1); ctx.stroke();
       ctx.globalAlpha = winner ? 0.9 : 0.55;
-      ctx.strokeStyle = winner ? colors.primary : colors.border;
+      ctx.strokeStyle = winner ? '#d2a95c' : colors.border;
       ctx.beginPath(); ctx.moveTo(vx, nextCy); ctx.lineTo(nextCardX, nextCy); ctx.stroke();
       ctx.globalAlpha = 1;
     });
@@ -2543,8 +2732,9 @@ async function buildBracketExportCanvas() {
   const avatarCache = new Map();
   await Promise.all([...playerIds].map(async pid => {
     const p = getPlayer(pid);
-    if (!p || !p.avatarUrl) return;
-    const img = await loadAvatarSafely(p.avatarUrl);
+    if (!p) return;
+    const avUrl = p.avatarUrl || teamAvatarUrl(p.name) || defaultAvatar(p.name);
+    const img = await loadAvatarSafely(avUrl);
     if (img) avatarCache.set(pid, img);
   }));
 
@@ -2584,12 +2774,24 @@ async function buildBracketExportCanvas() {
       drawExportSlot(ctx, match, match.player1Id, x, y, halfW, cardH, colors, avatarCache, 'a', avatarShape, dead);
       drawExportSlot(ctx, match, match.player2Id, x + halfW + vsGapW, y, halfW, cardH, colors, avatarCache, 'b', avatarShape, dead);
 
-      ctx.font = "700 12px " + EXPORT_FONT_STACK;
-      ctx.fillStyle = match.winnerId ? colors.primaryLight : colors.textMuted;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.direction = 'ltr';
-      ctx.fillText('VS', x + halfW + vsGapW / 2, y + cardH / 2);
+      {
+        const vw = 26, vh = 20, vcut = 6;
+        const vx0 = x + halfW + vsGapW / 2 - vw / 2;
+        const vy0 = y + cardH / 2 - vh / 2;
+        ctx.beginPath();
+        ctx.moveTo(vx0, vy0);
+        ctx.lineTo(vx0 + vw, vy0);
+        ctx.lineTo(vx0 + vw, vy0 + vh - vcut);
+        ctx.lineTo(vx0 + vw - vcut, vy0 + vh);
+        ctx.lineTo(vx0, vy0 + vh);
+        ctx.closePath();
+        ctx.fillStyle = '#d2a95c';
+        ctx.fill();
+        ctx.fillStyle = '#171410';
+        ctx.font = '800 9px ' + EXPORT_FONT_STACK;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr';
+        ctx.fillText('VS', vx0 + vw / 2, vy0 + vh / 2 + 0.5);
+      }
     });
   });
 
@@ -2681,7 +2883,7 @@ async function exportBracketAsPDF() {
       format: [canvas.width, canvas.height],
       hotfixes: ['px_scaling']
     });
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, canvas.width, canvas.height);
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width, canvas.height);
     pdf.save(exportFileBaseName() + '.pdf');
     toast('تم تصدير الجدول كملف PDF');
   } catch (e) {
@@ -2694,11 +2896,32 @@ async function exportBracketAsPDF() {
 }
 
 // ========== UI ==========
+// بيدّ الرقم من قيمته الحالية للهدف بحركة ease-out — أول تحميل بيعد من 0
+function animateNumber(el, target) {
+  if (!el) return;
+  if (target === '—' || target == null) { el.textContent = '—'; return; }
+  const targetNum = Number(target);
+  const from = parseInt(el.textContent, 10);
+  const startNum = isNaN(from) ? 0 : from;
+  if (startNum === targetNum) { el.textContent = String(targetNum); return; }
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.textContent = String(targetNum); return;
+  }
+  const dur = Math.min(900, 250 + Math.abs(targetNum - startNum) * 40);
+  const t0 = performance.now();
+  (function tick(now) {
+    const k = Math.min(1, ((now || performance.now()) - t0) / dur);
+    const eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = String(Math.round(startNum + (targetNum - startNum) * eased));
+    if (k < 1) requestAnimationFrame(tick);
+  })(performance.now());
+}
+
 function updateStats() {
-  $('#playerCount').textContent = state.players.length;
-  $('#matchCount').textContent = state.tournamentStarted ? state.matches.length : '—';
+  animateNumber($('#playerCount'), state.players.length);
+  animateNumber($('#matchCount'), state.tournamentStarted ? state.matches.length : '—');
   const r = state.tournamentStarted ? [...new Set(state.matches.map(m => m.round))].length : 0;
-  $('#roundCount').textContent = r || '—';
+  animateNumber($('#roundCount'), r || '—');
 }
 
 function updateBracketStatus() {
@@ -2755,6 +2978,7 @@ function showChampionModal(playerId) {
     }
   }
   $('#championModal').classList.add('open');
+  launchChampionConfetti();
 }
 
 function closeChampionModal() { $('#championModal').classList.remove('open'); }
@@ -2769,7 +2993,7 @@ function shareTournament() {
   const data = {
     name: state.settings.name,
     players: state.players.map(p => ({ name: p.name, discordId: p.discordId, avatarUrl: p.avatarUrl, seed: p.seed })),
-    matches: state.matches.map(m => ({ round: m.round, position: m.position, player1Id: m.player1Id, player2Id: m.player2Id, winnerId: m.winnerId, isBye: m.isBye })),
+    matches: state.matches.map(m => ({ round: m.round, position: m.position, player1Id: m.player1Id, player2Id: m.player2Id, winnerId: m.winnerId, isBye: m.isBye, score1: m.score1, score2: m.score2 })),
     started: state.tournamentStarted, finished: state.tournamentFinished, paused: state.tournamentPaused
   };
   const url = window.location.origin + window.location.pathname + '?b=' + encodeURIComponent(JSON.stringify(data));
@@ -2825,7 +3049,8 @@ function loadShared() {
       state.matches = d.matches.map((m, i) => ({
         id: i + 1, round: m.round, position: m.position,
         player1Id: m.player1Id, player2Id: m.player2Id,
-        winnerId: m.winnerId, isBye: m.isBye || false
+        winnerId: m.winnerId, isBye: m.isBye || false,
+        score1: m.score1 != null ? m.score1 : null, score2: m.score2 != null ? m.score2 : null
       }));
       state.nextMatchId = state.matches.length + 1;
       state.tournamentStarted = !!d.started;

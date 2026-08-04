@@ -2424,3 +2424,591 @@ body.swap-mode .bracket-grid { cursor: crosshair; }
 body.swap-mode .match-slot:not(.empty) { outline: 1px dashed rgba(145, 132, 201, 0.5); outline-offset: -1px; }
 .match-slot.swap-selected { outline: 2px solid #ffd700 !important; outline-offset: -2px; background: var(--win-bg) !important; }
 .mc-pause-btn.active { border-color: var(--primary); color: var(--primary); background: var(--primary-subtle); }
+
+/* ============================================================
+   K-Gang Premium Design v2 — الترقية الشاملة (2026-08-04)
+   اتلصقت في آخر الملف عشان تعتلي على التصميم القديم عبر cascade.
+   كل القواعد بتعتمد على متغيرات الثيم (--primary وغيره) فأي
+   ثيم تختاره من لوحة التحكم هياخد الشكل الجديد ده تلقائياً.
+   ============================================================ */
+
+/* ---------- متغيرات جديدة ---------- */
+:root {
+  --gold: #ffd700;
+  --gold-soft: rgba(255, 215, 0, 0.14);
+  --gold-glow: rgba(255, 215, 0, 0.35);
+  --glass: rgba(255, 255, 255, 0.03);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- خلفية Aurora المتحركة ---------- */
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.aurora-blob {
+  position: absolute;
+  width: 46vw;
+  height: 46vw;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--primary-glow), transparent 65%);
+  filter: blur(60px);
+  opacity: 0.45;
+  animation: aurora-drift 24s ease-in-out infinite alternate;
+}
+.aurora-blob:nth-child(1) { top: -12%; left: -8%; }
+.aurora-blob:nth-child(2) { bottom: -14%; right: -8%; animation-delay: -9s; animation-duration: 28s; }
+.aurora-blob:nth-child(3) { top: 38%; left: 52%; opacity: 0.25; animation-delay: -16s; animation-duration: 32s; }
+@keyframes aurora-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(6vw, -5vh) scale(1.18); }
+}
+@media (max-width: 640px) {
+  .aurora-blob { animation: none; opacity: 0.22; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob { animation: none; }
+}
+
+/* ---------- الهيدر ---------- */
+.header {
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35);
+}
+.logo-icon svg {
+  filter: drop-shadow(0 0 12px var(--primary-glow));
+}
+.nav-btn {
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-dark));
+}
+.nav-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 18px var(--primary-subtle);
+  transform: translateY(-1px);
+}
+
+/* ---------- الهيرو: عنوان متدرج + إحصائيات متوهجة ---------- */
+.hero-badge {
+  background: linear-gradient(135deg, var(--primary-subtle), var(--glass));
+  border-color: var(--primary-glow);
+  box-shadow: 0 0 24px var(--primary-subtle), inset 0 0 14px rgba(255, 255, 255, 0.02);
+}
+.hero-crest-icon svg,
+.hero-crest-icon img.team-logo-img {
+  filter: drop-shadow(0 0 24px var(--primary-glow));
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .hero-title {
+    background: linear-gradient(120deg, var(--text-primary) 10%, var(--primary-light) 55%, var(--primary) 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    filter: drop-shadow(0 0 28px var(--primary-glow));
+  }
+}
+.hero-stats {
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-dark));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow), 0 0 40px var(--primary-subtle);
+  transition: var(--theme-transition), box-shadow 0.25s ease, transform 0.25s ease;
+}
+.hero-stats:hover {
+  box-shadow: var(--shadow), 0 0 55px var(--primary-glow);
+  transform: translateY(-2px);
+}
+.stat-value {
+  text-shadow: 0 0 22px var(--primary-glow);
+}
+
+/* ---------- الأزرار: تدرج + توهج + ارتفاع ---------- */
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  box-shadow: 0 4px 18px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
+  box-shadow: 0 8px 28px var(--primary-glow);
+  transform: translateY(-2px);
+}
+.btn-primary:active { transform: translateY(0) scale(0.98); }
+
+.btn-secondary {
+  background: var(--glass);
+}
+.btn-secondary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 18px var(--primary-subtle);
+  transform: translateY(-1px);
+}
+
+.btn-danger-small:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 14px var(--primary-subtle);
+}
+
+/* ---------- قسم المخطط ---------- */
+.bracket-title-area h3::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 20px;
+  margin-inline-end: 10px;
+  vertical-align: -2px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--primary-light), var(--primary-dark));
+  box-shadow: 0 0 12px var(--primary-glow);
+}
+.bracket-container {
+  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.round-header {
+  letter-spacing: 2.5px;
+  background: linear-gradient(180deg, var(--primary-subtle), transparent);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+/* ---------- كروت المباريات ---------- */
+.match-card:hover {
+  background: linear-gradient(135deg, var(--bg-card-hover), var(--glass));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+}
+.match-card.has-winner {
+  background: linear-gradient(135deg, var(--win-bg), transparent 70%);
+  box-shadow: inset 0 0 0 1px var(--gold-soft);
+}
+
+/* شارة VS — مربع أنيق بدل النص العادي */
+.vs-label {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-dark));
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+.match-card.has-winner .vs-label {
+  border-color: var(--gold-soft);
+  color: var(--gold);
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.12);
+}
+
+.match-slot:not(.empty):not(.locked):hover {
+  background: var(--primary-subtle);
+  box-shadow: inset 0 0 0 1px var(--primary-glow);
+}
+.match-slot.winner .slot-name {
+  text-shadow: 0 0 14px var(--gold-glow);
+}
+
+/* ---------- قايمة اللاعبين ---------- */
+.player-card {
+  background: linear-gradient(135deg, var(--bg-surface), var(--bg-dark));
+}
+.player-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary-glow);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), 0 0 16px var(--primary-subtle);
+}
+.player-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+.order-badge {
+  box-shadow: 0 0 12px var(--primary-subtle);
+}
+
+/* معاينة المواجهات */
+.pairing-row { transition: var(--transition); }
+.pairing-row:hover {
+  border-color: var(--primary-glow);
+  background: var(--primary-subtle);
+}
+
+/* ---------- لوحة التحكم ---------- */
+.admin-panel {
+  box-shadow: -8px 0 50px rgba(0, 0, 0, 0.65);
+}
+.tab-btn { position: relative; }
+.tab-btn.active {
+  background: linear-gradient(180deg, var(--primary-subtle), transparent);
+  border-bottom-color: transparent;
+}
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+.form-group input:focus,
+.form-group select:focus,
+.password-input-group input:focus {
+  box-shadow: 0 0 0 3px var(--primary-subtle), 0 0 18px var(--primary-subtle);
+}
+.manage-actions { flex-wrap: wrap; }
+.mc-toolbar { flex-wrap: wrap; }
+.mc-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.mc-btn.mc-winner { box-shadow: 0 0 14px rgba(255, 215, 0, 0.15); }
+
+/* ---------- المودالات ---------- */
+.modal-content {
+  background: linear-gradient(180deg, var(--bg-dark), var(--bg-deep));
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-lg);
+}
+.password-modal {
+  box-shadow: var(--shadow-lg), 0 0 60px var(--primary-subtle);
+}
+.champion-modal {
+  border-color: var(--gold-soft);
+  box-shadow: var(--shadow-lg), 0 0 80px rgba(255, 215, 0, 0.12), 0 0 40px var(--primary-subtle);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .champion-name {
+    background: linear-gradient(120deg, #ffffff 0%, #ffd700 60%, #f2a154 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    filter: drop-shadow(0 0 18px var(--gold-glow));
+  }
+}
+
+/* ---------- التوستات ---------- */
+.toast {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid #4caf50;
+  box-shadow: var(--shadow), 0 0 20px rgba(0, 0, 0, 0.25);
+}
+.toast.success { border-color: var(--border); border-inline-start-color: #4caf50; }
+.toast.error   { border-color: var(--border); border-inline-start-color: var(--primary); }
+
+/* ---------- لمسات أخيرة ---------- */
+.footer { border-top-color: transparent; position: relative; }
+.footer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--primary-glow), transparent);
+}
+::-webkit-scrollbar-thumb { background: var(--primary-dark); }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ========== شاشة التحميل ========== */
+.loader-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--bg-deep);
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+.loader-screen.hide { opacity: 0; visibility: hidden; pointer-events: none; }
+/* الـ var داخل سمات الـ SVG attr مش بيتحل — نحط الألوان هنا في CSS عشان يتبعوا الثيم */
+.loader-logo svg polygon:first-child { fill: none; stroke: var(--primary); }
+.loader-logo svg polygon:nth-child(2) { fill: var(--primary-subtle); stroke: none; }
+.loader-logo svg text { fill: var(--primary); }
+.loader-logo svg {
+  filter: drop-shadow(0 0 18px var(--primary-glow));
+  animation: loader-pulse 1.4s ease-in-out infinite;
+}
+@keyframes loader-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.85; }
+}
+.loader-text {
+  font-family: var(--font-display);
+  letter-spacing: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.loader-bar { width: 160px; height: 3px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.loader-bar-fill {
+  height: 100%;
+  width: 40%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  animation: loader-slide 1.2s ease-in-out infinite;
+}
+@keyframes loader-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(400%); }
+}
+
+/* ========== الكونفيتي ========== */
+.confetti-canvas { position: fixed; inset: 0; z-index: 600; pointer-events: none; }
+
+/* ========== لمعة الأزرار الدورية ========== */
+@keyframes btn-shine {
+  0%        { transform: translateX(-160%) skewX(-20deg); }
+  22%, 100% { transform: translateX(280%) skewX(-20deg); }
+}
+.btn-primary, .nav-btn, .mc-pause-btn {
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after, .nav-btn::after, .mc-pause-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+  transform: translateX(-160%) skewX(-20deg);
+  animation: btn-shine 6s ease-in-out infinite;
+  pointer-events: none;
+}
+.nav-btn::after      { animation-delay: 2s; }   /* كل نوع بيلمع في وقت مختلف */
+.mc-pause-btn::after { animation-delay: 4s; }
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary::after, .nav-btn::after, .mc-pause-btn::after { display: none; }
+}
+
+/* ========== دورة الفوز 360° — النسخة الاحترافية ========== */
+@keyframes winner-flip-360 {
+  0%   { transform: rotateY(0deg) scale(1); box-shadow: 0 0 0 rgba(255,215,0,0); filter: brightness(1); }
+  12%  { transform: rotateY(0deg) scale(0.94, 1.04); }                       /* تجهيز قبل القفزة */
+  45%  { transform: rotateY(180deg) scale(1.08); box-shadow: 0 0 26px rgba(255,215,0,0.6); filter: brightness(1.25); } /* نص الدوران — التوهج الأقصى */
+  75%  { transform: rotateY(320deg) scale(1.03); box-shadow: 0 0 14px rgba(255,215,0,0.35); }
+  88%  { transform: rotateY(360deg) scale(0.98); }                           /* لمسة الهبوط */
+  100% { transform: rotateY(360deg) scale(1); box-shadow: 0 0 0 rgba(255,215,0,0); filter: brightness(1); }
+}
+.match-slot.winner-flip-anim {
+  animation: winner-flip-360 1.15s cubic-bezier(0.34, 1.2, 0.44, 1);
+}
+
+/* نفس الترقية لظهور البطل في المودال */
+@keyframes champion-flip-360 {
+  0%   { transform: rotateY(0deg) scale(1); filter: brightness(1); }
+  12%  { transform: rotateY(0deg) scale(0.92, 1.06); }
+  45%  { transform: rotateY(180deg) scale(1.12); filter: brightness(1.3) drop-shadow(0 0 24px rgba(255,215,0,0.65)); }
+  75%  { transform: rotateY(320deg) scale(1.05); }
+  88%  { transform: rotateY(360deg) scale(0.97); }
+  100% { transform: rotateY(360deg) scale(1); filter: none; }
+}
+.champion-avatar.champion-flip-anim {
+  animation: champion-flip-360 1.2s cubic-bezier(0.34, 1.2, 0.44, 1);
+}
+
+/* ============================================================
+   BROADCAST ESPORTS SKIN — ستايل البث الاحترافي (2026-08-04)
+   دهب للعناوين والخطوط + بنفسجي متدرج للفرق + زوايا مشطوفة.
+   بيعتمد على متغيرات الثيم فأي ثيم من لوحة التحكم بينلونه.
+   ============================================================ */
+:root {
+  --gold: #d2a95c;
+  --gold-soft: rgba(210, 169, 92, 0.16);
+  --gold-line: rgba(210, 169, 92, 0.4);
+  --ink: #171410;
+}
+
+/* ---------- خلفية هندسية قطرية فوق الخلفية الحالية ---------- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 42%, rgba(255,255,255,0.018) 42%, rgba(255,255,255,0.018) 58%, transparent 58%),
+    linear-gradient(295deg, transparent 30%, rgba(255,255,255,0.022) 30%, rgba(255,255,255,0.022) 44%, transparent 44%),
+    linear-gradient(25deg, transparent 55%, rgba(255,255,255,0.015) 55%, rgba(255,255,255,0.015) 70%, transparent 70%);
+}
+
+/* ---------- الهيدر: شعرة دهب ---------- */
+.header { border-bottom-color: var(--gold-line); }
+.logo-sub { color: var(--gold); }
+
+/* ---------- الهيرو: شارة وعنوان دهب ---------- */
+.hero-badge { background: var(--gold-soft); border-color: var(--gold-line); color: var(--gold); }
+.badge-dot { background: var(--gold); }
+.hero-subtitle { color: var(--gold); }
+
+/* ---------- أزرار بزوايا مشطوفة ---------- */
+.btn-primary, .btn-secondary {
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%);
+}
+.btn-primary:hover { filter: drop-shadow(0 0 14px var(--primary-glow)); }
+.btn-secondary:hover { filter: drop-shadow(0 0 10px var(--gold-soft)); }
+
+/* ---------- شارة الترتيب: شيب أبيض زاوية (زي سكور الصورة) ---------- */
+.order-badge {
+  background: #f5f2ea;
+  color: var(--ink);
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+  font-weight: 800;
+  box-shadow: none;
+}
+
+/* ---------- عناوين الأدوار: دهب بصندوق صغير ---------- */
+.round-header {
+  color: var(--gold);
+  border-bottom-color: var(--gold-line);
+  letter-spacing: 3px;
+}
+.round-bye-badge { border-color: var(--gold-line); color: var(--gold); background: var(--gold-soft); }
+
+/* ---------- كروت الفرق: بار بنفسجي متدرج بحافة مائلة ---------- */
+.match-card > .match-slot.slot-a:not(.empty) {
+  background: linear-gradient(270deg, var(--primary-dark), var(--primary) 92%);
+  clip-path: polygon(9px 0, 100% 0, 100% 100%, 0 100%);
+}
+.match-card > .match-slot.slot-b:not(.empty) {
+  background: linear-gradient(90deg, var(--primary-dark), var(--primary) 92%);
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 100%, 0 100%);
+}
+.match-card > .match-slot.slot-a.winner { background: linear-gradient(270deg, var(--primary), var(--primary-light)); }
+.match-card > .match-slot.slot-b.winner { background: linear-gradient(90deg, var(--primary), var(--primary-light)); }
+.match-slot:not(.empty):not(.locked):hover { background: var(--primary); box-shadow: none; filter: brightness(1.12); }
+.slot-name {
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.match-slot:not(.empty) .slot-id { color: rgba(255, 255, 255, 0.65); opacity: 1; }
+.match-card.has-winner .match-slot.winner .slot-name {
+  color: #fff;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+
+/* ---------- شارة VS: شيب دهب مشطوف ---------- */
+.vs-label {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gold);
+  color: var(--ink);
+  font-weight: 800;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%);
+}
+.match-card.has-winner .vs-label { color: var(--ink); }
+
+/* ---------- خطوط الربط: دهب بدل الرمادي ---------- */
+.round-column:not(:last-child) .match-card::after { background: var(--gold-line); opacity: 0.8; }
+.round-column:not(:last-child) .match-card.has-winner::after { background: var(--gold); box-shadow: 0 0 8px var(--gold-soft); }
+.round-column:not(:last-child) .match-card:nth-child(odd)::before,
+.round-column:not(:last-child) .match-card:nth-child(even)::before { background: var(--gold-line); opacity: 0.35; }
+
+/* ---------- حاوية المخطط: شظايا زوايا + نص جانبي عمودي ---------- */
+.bracket-container::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 130px; height: 130px;
+  background: linear-gradient(225deg, var(--gold-soft) 0%, transparent 55%);
+  pointer-events: none;
+  z-index: 1;
+}
+.bracket-container::after {
+  content: 'K-GANG · PLAYOFFS · 2026';
+  position: absolute;
+  left: 8px; top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: var(--text-muted);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
+}
+.bracket-grid { padding-left: 30px; }
+
+/* ---------- عنوان القسم وحالة البطولة ---------- */
+.bracket-title-area h3 { color: var(--gold); text-transform: uppercase; letter-spacing: 2px; }
+.bracket-title-area h3::before { background: linear-gradient(180deg, var(--gold), var(--gold-line)); }
+.bracket-status.active { background: var(--gold); border-color: var(--gold); color: var(--ink); font-weight: 800; }
+
+/* ---------- وضع التبديل: ظل داخلي بدل outline (عشان الـ clip-path) ---------- */
+body.swap-mode .match-slot:not(.empty) { outline: none; box-shadow: inset 0 0 0 1px var(--gold-line); }
+.match-slot.swap-selected { outline: none !important; box-shadow: inset 0 0 0 2px #ffd700 !important; }
+
+/* ---------- لوحة التحكم ولمسات أخيرة ---------- */
+.mc-btn.mc-winner { background: linear-gradient(90deg, var(--primary), var(--primary-light)); color: #fff; border-color: transparent; }
+.player-card:hover { border-color: var(--gold-line); }
+.tab-btn.active { color: var(--gold); }
+@media (prefers-reduced-motion: reduce) { body::before { background: none; } }
+
+/* ========== درجات النتائج (Score Chips) ========== */
+/* شيب النتيجة على طرف كرت الماتش — أبيض مشطوف، دهب للفائز */
+.score-chip {
+  min-width: 20px;
+  height: 22px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f2ea;
+  color: #171410;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+  flex-shrink: 0;
+  direction: ltr;
+}
+.match-slot.winner .score-chip { background: #ffd700; }
+
+/* حقول إدخال النتيجة في لوحة التحكم */
+.mc-score {
+  width: 34px;
+  padding: 5px 4px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.mc-score:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-subtle); }
+.mc-score:disabled { opacity: 0.3; cursor: not-allowed; }
+.mc-score::-webkit-outer-spin-button,
+.mc-score::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.mc-score { -moz-appearance: textfield; appearance: textfield; }
