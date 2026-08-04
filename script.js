@@ -277,6 +277,7 @@ async function pullFromCloud() {
         state.adminPasswordHash = localHashBeforePull;
       }
       ensureAnimationsDefaults();
+      resultHistory = [];
       buildPlayerMap();
       saveLocalOnly();
       renderAll();
@@ -285,7 +286,11 @@ async function pullFromCloud() {
     }
   } catch (e) {
     console.error('[K-Gang] cloud pull failed', e);
-    toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات JSONBin أعلى script.js', 'error');
+    const now = Date.now();
+    if (now - lastCloudErrorToastAt > 30000) {
+      lastCloudErrorToastAt = now;
+      toast('⚠️ تعذّر الاتصال بقاعدة البيانات السحابية — راجع إعدادات JSONBin أعلى script.js', 'error');
+    }
   }
 }
 
@@ -363,6 +368,10 @@ function sanitizeAvatarUrl(url, name) {
 // slot instead of re-playing it on every already-decided match whenever the
 // bracket re-renders (tab switch, cloud sync, etc).
 let pendingWinnerAnim = null;
+
+// Tracks every match whose result was set by the admin, so the "تراجع"
+// (undo) button can step back through results in reverse order.
+let resultHistory = [];
 
 let playerMap = null;
 function buildPlayerMap() {
@@ -458,6 +467,8 @@ function hexToRgba(hex, alpha) {
 // Applies the 4 base theme colors by deriving every other CSS variable
 // (borders, hover shades, secondary/muted text, glows) from them.
 function applyThemeColors(c) {
+  // حماية: لو ات استدعت بكائن ناقص/فاضي، استخدم ألوان الثيم الافتراضي
+  if (!c || typeof c !== 'object') c = THEME_PRESETS.kgang.colors;
   const root = document.documentElement.style;
   root.setProperty('--primary', c.primary);
   root.setProperty('--primary-dark', mixHex(c.primary, '#000000', 0.82));
@@ -519,6 +530,7 @@ function sanitizeBgImageUrl(url) {
 }
 
 function applyThemeBackground(bg) {
+  bg = (bg && typeof bg === 'object') ? bg : {};
   const layer = $('#siteBgLayer');
   const overlay = $('#siteBgOverlay');
   if (!layer || !overlay) return;
@@ -559,6 +571,7 @@ function applyAvatarShape(shape) {
 }
 
 function applyThemeFull() {
+  ensureThemeDefaults(); // تطبيع كامل قبل أي تطبيق
   applyThemeColors(state.theme.colors);
   applyThemeFont(state.theme.font);
   applyThemeBackground(state.theme.background);
@@ -596,13 +609,44 @@ function applyThemeLogo() {
   });
 }
 
-// Backfills `theme.animations` and `theme.avatarShape` for states
-// saved/synced before those features existed, so older caches / cloud
-// records don't crash on missing keys.
+// يرمّم كل حقول الثيم الناقصة (preset / colors / font / background / logo /
+// themeImages / avatarShape / animations) — من حفظ محلي قديم أو سجل سحابي
+// وصل فيه كائن theme جزئي أو فاضي. من غيرها state.theme.colors ممكن يبقى
+// undefined وتنهار applyThemeColors بخطأ:
+// Cannot read properties of undefined (reading 'primary')
+function ensureThemeDefaults() {
+  const base = THEME_PRESETS.kgang;
+  if (!state.theme || typeof state.theme !== 'object') state.theme = {};
+  const t = state.theme;
+
+  if (!t.preset || typeof t.preset !== 'string') t.preset = 'kgang';
+
+  if (!t.colors || typeof t.colors !== 'object') t.colors = {};
+  Object.keys(base.colors).forEach(k => {
+    if (typeof t.colors[k] !== 'string' || !t.colors[k]) t.colors[k] = base.colors[k];
+  });
+
+  if (!t.font || !FONT_PAIRS[t.font]) t.font = 'rajdhani_inter';
+
+  if (!t.background || typeof t.background !== 'object') {
+    t.background = { type: 'default', color: '#141219', gradColor1: '#1b1822', gradColor2: '#0d0c12', imageUrl: '', overlayOpacity: 55, blur: 0 };
+  } else {
+    if (!t.background.type) t.background.type = 'default';
+    if (t.background.overlayOpacity == null || isNaN(t.background.overlayOpacity)) t.background.overlayOpacity = 55;
+    if (t.background.blur == null || isNaN(t.background.blur)) t.background.blur = 0;
+    if (t.background.imageUrl == null) t.background.imageUrl = '';
+  }
+
+  if (t.logo == null) t.logo = '';
+  if (!t.themeImages || typeof t.themeImages !== 'object') t.themeImages = {};
+  if (!['circle', 'hexagon', 'square'].includes(t.avatarShape)) t.avatarShape = 'circle';
+  t.animations = Object.assign({}, DEFAULT_ANIMATIONS, t.animations || {});
+}
+
+// نفس الاسم القديم كـ wrapper — عشان استدعاءات loadLocalCache / pullFromCloud
+// تفضل تشتغل من غير أي تعديل فيهم
 function ensureAnimationsDefaults() {
-  if (!state.theme) return;
-  state.theme.animations = Object.assign({}, DEFAULT_ANIMATIONS, state.theme.animations || {});
-  if (!state.theme.avatarShape) state.theme.avatarShape = 'circle';
+  ensureThemeDefaults();
 }
 
 // ========== Animation Engine ==========
@@ -634,12 +678,14 @@ function renderEffectsTab() {
 }
 
 function updateBracketEntrance(value) {
+  ensureThemeDefaults();
   state.theme.animations.bracketEntrance = value;
   applyAnimations(state.theme.animations);
   saveState();
 }
 
 function updateAnimToggle(key, checked) {
+  ensureThemeDefaults();
   state.theme.animations[key] = !!checked;
   applyAnimations(state.theme.animations);
   saveState();
@@ -663,6 +709,64 @@ function resetAnimations() {
   renderEffectsTab();
   saveState();
   toast('تم استعادة إعدادات المؤثرات الافتراضية');
+}
+
+// ========== التحكم في المواجهات: قرعة + تبديل أماكن ==========
+function shufflePlayers() {
+  if (state.tournamentStarted) { toast('لا يمكن الخلط بعد بدء البطولة — اعمل إعادة تعيين الأول', 'error'); return; }
+  if (state.players.length < 2) { toast('أضف فريقين على الأقل', 'error'); return; }
+  if (!confirm('خلط ترتيب الفرق عشوائياً؟ الترتيب اليدوي الحالي هيتغيّر.')) return;
+  for (let i = state.players.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = state.players[i]; state.players[i] = state.players[j]; state.players[j] = t;
+  }
+  state.players.forEach((p, k) => p.seed = k + 1);
+  buildPlayerMap();
+  saveState(); renderPlayers(); updateStats();
+  toast('🎲 تم الخلط — راجع معاينة المواجهات تحت، وتقدر تعدّل يدوياً بالأسهم ▲▼');
+}
+
+let swapMode = false;
+let swapFirstId = null;
+
+function toggleSwapMode() {
+  if (!swapMode) {
+    if (!state.tournamentStarted) { toast('ابدأ البطولة الأول — قبل البدء استخدم أسهم ▲▼', 'error'); return; }
+    if (state.tournamentFinished) { toast('البطولة انتهت — مفيش تبديل بعد النهاية', 'error'); return; }
+  }
+  swapMode = !swapMode;
+  swapFirstId = null;
+  document.body.classList.toggle('swap-mode', swapMode);
+  const btn = $('#swapModeBtn');
+  if (btn) btn.classList.toggle('active', swapMode);
+  toast(swapMode ? '🔁 وضع التبديل شغال — اضغط على فريقين في المخطط' : 'تم إيقاف وضع التبديل');
+}
+
+// الفريق مسموح تبديله طالما ما لعبش مباراة حقيقية محسومة (الباي مش مانع)
+function playerHasDecidedMatch(playerId) {
+  return state.matches.some(m => m.winnerId != null && !m.isBye &&
+    (m.player1Id === playerId || m.player2Id === playerId));
+}
+
+function trySwapPlayers(idA, idB) {
+  if (idA === idB) { swapFirstId = null; renderBracket(); return; }
+  const pa = getPlayer(idA), pb = getPlayer(idB);
+  if (!pa || !pb) return;
+  if (playerHasDecidedMatch(idA) || playerHasDecidedMatch(idB)) {
+    toast('⚠️ لا يمكن التبديل — أحد الفريقين لعب مباراة نتيجتها محسومة', 'error');
+    swapFirstId = null;
+    renderBracket();
+    return;
+  }
+  // تبديل شامل: المعرّفات بتتبدل في كل المatches — هيكل الشجرة يفضل سليم
+  state.matches.forEach(m => {
+    if (m.player1Id === idA) m.player1Id = idB; else if (m.player1Id === idB) m.player1Id = idA;
+    if (m.player2Id === idA) m.player2Id = idB; else if (m.player2Id === idB) m.player2Id = idA;
+  });
+  toast('✅ تم تبديل «' + pa.name + '» و«' + pb.name + '»');
+  swapMode = false; swapFirstId = null;
+  document.body.classList.remove('swap-mode');
+  saveState(); renderBracket(); renderMatchControls();
 }
 
 // ----- Admin panel: Theme tab UI -----
@@ -692,7 +796,7 @@ function renderThemeTab() {
       '</button>';
   }).join('');
 
-  const c = state.theme.colors;
+  const c = state.theme.colors || {};
   if ($('#themeColorPrimary')) $('#themeColorPrimary').value = c.primary;
   if ($('#themeColorText')) $('#themeColorText').value = c.textPrimary;
   if ($('#themeColorBgDeep')) $('#themeColorBgDeep').value = c.bgDeep;
@@ -707,7 +811,7 @@ function renderThemeTab() {
     fontSelect.value = state.theme.font;
   }
 
-  const bg = state.theme.background;
+  const bg = state.theme.background || {};
   $$('.bg-type-tab').forEach(b => b.classList.toggle('active', b.dataset.bgtype === bg.type));
   ['solid', 'gradient', 'image'].forEach(t => {
     const panel = $('#bgPanel-' + t);
@@ -854,6 +958,7 @@ function selectThemePreset(id) {
 }
 
 function updateThemeColor(key, value) {
+  ensureThemeDefaults();
   state.theme.colors[key] = value;
   state.theme.preset = 'custom';
   applyThemeColors(state.theme.colors);
@@ -870,6 +975,7 @@ function updateFontSelection(fontId) {
 }
 
 function updateBgType(type) {
+  ensureThemeDefaults();
   state.theme.background.type = type;
   applyThemeBackground(state.theme.background);
   renderThemeTab();
@@ -877,6 +983,7 @@ function updateBgType(type) {
 }
 
 function updateBgValue() {
+  ensureThemeDefaults();
   const bg = state.theme.background;
   if (bg.type === 'solid') bg.color = $('#bgSolidColor').value;
   else if (bg.type === 'gradient') { bg.gradColor1 = $('#bgGradColor1').value; bg.gradColor2 = $('#bgGradColor2').value; }
@@ -892,6 +999,7 @@ function updateBgValue() {
 }
 
 function updateBgOverlay(val) {
+  ensureThemeDefaults();
   state.theme.background.overlayOpacity = Number(val);
   $('#bgOverlayVal').textContent = val + '%';
   applyThemeBackground(state.theme.background);
@@ -899,6 +1007,7 @@ function updateBgOverlay(val) {
 }
 
 function updateBgBlur(val) {
+  ensureThemeDefaults();
   state.theme.background.blur = Number(val);
   $('#bgBlurVal').textContent = val + 'px';
   applyThemeBackground(state.theme.background);
@@ -947,8 +1056,6 @@ function compressImageToDataUrl(img) {
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, w, h);
     for (const q of qualities) {
       const dataUrl = canvas.toDataURL(mime, q);
@@ -1007,8 +1114,6 @@ function compressLogoToDataUrl(img) {
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, w, h);
     if (mime === 'image/png') {
       const dataUrl = canvas.toDataURL(mime);
@@ -1079,8 +1184,6 @@ function compressAvatarToDataUrl(img) {
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, w, h);
     for (const q of qualities) {
       const dataUrl = canvas.toDataURL(mime, q);
@@ -1192,6 +1295,10 @@ function toggleAdminPanel(open) {
 }
 
 async function checkPassword() {
+  if (!window.crypto || !window.crypto.subtle) {
+    toast('⚠️ تسجيل الدخول محتاج HTTPS — افتح الموقع عبر https:// أو localhost', 'error');
+    return;
+  }
   const pw = $('#passwordInput').value;
   const btn = $('#passwordModal .btn-primary');
   if (btn) btn.disabled = true;
@@ -1238,6 +1345,10 @@ function toggleLock() {
 }
 
 async function changePassword() {
+  if (!window.crypto || !window.crypto.subtle) {
+    toast('⚠️ تسجيل الدخول محتاج HTTPS — افتح الموقع عبر https:// أو localhost', 'error');
+    return;
+  }
   const input = $('#adminPassword');
   const pw = input.value.trim();
   if (!pw || pw.length < 4) { toast('كلمة السر يجب أن تكون 4 أحرف على الأقل', 'error'); return; }
@@ -1265,6 +1376,7 @@ function updateLockUI() {
 // Close password modal on Escape
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
+    if (swapMode) toggleSwapMode();
     if ($('#passwordModal').classList.contains('open')) { $('#passwordModal').classList.remove('open'); }
     if ($('#adminPanel').classList.contains('open') && state.isLocked) { toggleAdminPanel(false); }
     if ($('#championModal').classList.contains('open')) closeChampionModal();
@@ -1379,7 +1491,7 @@ function renderPlayers() {
     const down = !locked && i < state.players.length - 1 ? '<button class="move-btn" data-dir="1" onclick="movePlayer(' + p.id + ',1)" title="تحريك لأسفل">▼</button>' : '<button class="move-btn disabled" disabled>▼</button>';
     return '<div class="player-card">' +
       '<span class="order-badge" title="الترتيب في المخطط">' + p.seed + '</span>' +
-      '<span class="avatar-frame"><img class="player-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="' + escapeHtml(p.name) + '" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'"></span>' +
+      '<span class="avatar-frame"><img class="player-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="' + escapeAttr(p.name) + '" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'"></span>' +
       '<div class="player-info">' +
         '<div class="player-name">' + escapeHtml(p.name) + '</div>' +
         '<div class="player-discord">' + (p.discordId ? 'ID: ' + escapeHtml(p.discordId) : '') + '</div>' +
@@ -1469,6 +1581,7 @@ function generateBracket() {
   sorted.forEach((p, i) => { slots[i] = p; });
 
   state.matches = [];
+  resultHistory = [];
   state.nextMatchId = 1;
   state.tournamentStarted = true;
   state.tournamentFinished = false;
@@ -1522,6 +1635,7 @@ function setWinner(matchId, playerId) {
   }
 
   match.winnerId = playerId;
+  resultHistory.push(match.id);
   if (state.theme.animations && state.theme.animations.winnerFlip) {
     pendingWinnerAnim = { matchId: match.id, playerId: playerId };
   }
@@ -1573,6 +1687,23 @@ function togglePause() {
   toast(state.tournamentPaused ? '⏸️ تم إيقاف البطولة مؤقتاً' : '▶️ تم استئناف البطولة');
 }
 
+function undoLastResult() {
+  if (state.isLocked) { toast('يجب فتح لوحة التحكم أولاً', 'error'); return; }
+  while (resultHistory.length) {
+    const id = resultHistory.pop();
+    const m = state.matches.find(x => x.id === id);
+    if (m && m.winnerId != null && !m.isBye) {
+      m.winnerId = null;
+      clearDownstream(m);
+      state.tournamentFinished = false;
+      saveState(); renderBracket(); renderMatchControls(); updateStats(); updateBracketStatus();
+      toast('↩️ تم التراجع عن آخر نتيجة');
+      return;
+    }
+  }
+  toast('مفيش نتائج للتراجع عنها', 'error');
+}
+
 function resetBracket() {
   if (!state.tournamentStarted) return;
   if (!confirm('إعادة تعيين البطولة؟ سيتم مسح جميع النتائج.')) return;
@@ -1580,6 +1711,9 @@ function resetBracket() {
   state.tournamentPaused = false;
   state.tournamentFinished = false;
   state.matches = [];
+  resultHistory = [];
+  swapMode = false; swapFirstId = null;
+  document.body.classList.remove('swap-mode');
   saveState(); renderBracket(); renderMatchControls(); renderPlayers(); updateStats(); updateBracketStatus();
   toast('تم إعادة تعيين البطولة — الآن رتّب الفرق بالأسهم في تبويب «اللاعبون» ثم ابدأ من جديد');
 }
@@ -1619,6 +1753,13 @@ function renderBracket() {
     });
   }
 
+  let currentRound = null;
+  if (!state.tournamentFinished && !state.tournamentPaused) {
+    for (const r of rounds) {
+      if (state.matches.some(m => m.round === r && m.winnerId == null && isLive[m.id])) { currentRound = r; break; }
+    }
+  }
+
   function slotHtml(match, playerId, isFirst) {
     const sideClass = isFirst ? 'slot-a' : 'slot-b';
     if (playerId == null) {
@@ -1632,7 +1773,7 @@ function renderBracket() {
     const p = getPlayer(playerId);
     const iw = match.winnerId === playerId;
     const locked = state.isLocked ? ' locked' : '';
-    return '<div class="match-slot ' + sideClass + (iw ? ' winner' : '') + locked + '" data-match="' + match.id + '" data-player="' + playerId + '">' +
+    return '<div class="match-slot ' + sideClass + (iw ? ' winner' : '') + locked + (swapMode && swapFirstId === playerId ? ' swap-selected' : '') + '" data-match="' + match.id + '" data-player="' + playerId + '">' +
       (p
         ? '<span class="avatar-frame"><img class="slot-avatar" src="' + escapeAttr(sanitizeAvatarUrl(p.avatarUrl, p.name)) + '" alt="" loading="lazy" onerror="this.src=\'' + escapeAttr(defaultAvatar(p.name)) + '\'"></span>'
         : '') +
@@ -1656,7 +1797,7 @@ function renderBracket() {
     const header = byeCount > 0
       ? headerText + '<span class="round-bye-badge" title="' + byeCount + ' فريق تأهلوا تلقائياً لعدم اكتمال عدد الفرق">' + byeCount + ' تأهل تلقائي</span>'
       : headerText;
-    html += '<div class="round-column"><div class="round-header">' + header + '</div>';
+    html += '<div class="round-column' + (round === currentRound ? ' current-round' : '') + '"><div class="round-header">' + header + '</div>';
 
     matches.forEach(match => {
       const hw = match.winnerId != null;
@@ -1672,6 +1813,25 @@ function renderBracket() {
   });
 
   grid.innerHTML = html;
+  // شريط البطل — ظاهر لكل زائر لما البطولة تخلص
+  let ribbon = $('#championRibbon');
+  if (!ribbon) {
+    ribbon = document.createElement('div');
+    ribbon.id = 'championRibbon';
+    grid.parentElement.appendChild(ribbon);
+  }
+  if (state.tournamentFinished) {
+    const fr = Math.max(...state.matches.map(m => m.round));
+    const fm = state.matches.find(m => m.round === fr);
+    const champ = fm ? getPlayer(fm.winnerId) : null;
+    if (champ) {
+      ribbon.innerHTML = '<span class="cr-trophy">🏆</span><span class="cr-text"><span class="cr-label">البطل</span><span class="cr-name">' + escapeHtml(champ.name) + '</span></span>';
+      ribbon.style.display = 'flex';
+    } else ribbon.style.display = 'none';
+  } else {
+    ribbon.innerHTML = '';
+    ribbon.style.display = 'none';
+  }
   // Position each round's match cards so they align with the bracket
   // structure (round 1 stays in flow; later rounds are placed at the exact
   // midpoint of their two child matches). The old `space-around` CSS merely
@@ -1769,6 +1929,18 @@ document.addEventListener('click', function(e) {
   if (!slot) return;
   const matchId = parseInt(slot.dataset.match);
   const playerId = parseInt(slot.dataset.player);
+  if (swapMode) {
+    if (state.isLocked) { toast('يجب فتح لوحة التحكم أولاً', 'error'); return; }
+    if (isNaN(playerId)) return;
+    if (swapFirstId == null) {
+      swapFirstId = playerId;
+      renderBracket();
+      toast('تمام — دلوقتي اضغط على الفريق التاني');
+      return;
+    }
+    trySwapPlayers(swapFirstId, playerId);
+    return;
+  }
   if (state.isLocked) {
     toast('يجب فتح لوحة التحكم أولاً', 'error');
     return;
@@ -1792,6 +1964,8 @@ function renderMatchControls() {
   html += '<button class="mc-pause-btn ' + (state.tournamentPaused ? 'resume' : 'pause') + '" onclick="togglePause()" title="' + (state.tournamentPaused ? 'استئناف البطولة' : 'إيقاف البطولة مؤقتاً') + '">';
   html += state.tournamentPaused ? '▶️ استئناف' : '⏸️ إيقاف مؤقت';
   html += '</button>';
+  html += '<button class="mc-pause-btn' + (swapMode ? ' active' : '') + '" id="swapModeBtn" onclick="toggleSwapMode()" title="بدّل مكان فريقين في المخطط">🔁 تبديل فرق</button>';
+  html += '<button class="mc-pause-btn" onclick="undoLastResult()" title="تراجع عن آخر نتيجة اتسجّلت">↩️ تراجع</button>';
   if (state.tournamentPaused) {
     html += '<span class="paused-indicator">⏸️ البطولة موقوفة مؤقتاً</span>';
   }
@@ -2060,8 +2234,10 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
 
   // Name (and discord id, if set) sit on the outer side of the avatar,
   // away from the "vs" gap — mirrors the on-page slot-info stack.
+  const seedTxt = (p && p.seed) ? '#' + p.seed : '';
+  const seedW = seedTxt ? 24 : 0;
   const textX = side === 'a' ? cx - avatarR - EXPORT_NAME_GAP : cx + avatarR + EXPORT_NAME_GAP;
-  const maxTextW = side === 'a' ? (textX - (x + pad)) : ((x + w - pad) - textX);
+  const maxTextW = (side === 'a' ? (textX - (x + pad)) : ((x + w - pad) - textX)) - seedW;
   const hasId = !!(p && p.discordId);
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
@@ -2074,6 +2250,14 @@ function drawExportSlot(ctx, match, playerId, x, y, w, h, colors, avatarCache, s
     ctx.direction = 'ltr';
     ctx.textAlign = align;
     ctx.fillText(fitText(ctx, p.discordId, maxTextW), textX, cyMid + 8);
+  }
+  if (seedTxt) {
+    ctx.font = "600 10px " + EXPORT_FONT_STACK;
+    ctx.fillStyle = colors.textMuted;
+    ctx.textAlign = side === 'a' ? 'left' : 'right';
+    ctx.textBaseline = 'middle';
+    ctx.direction = 'ltr';
+    ctx.fillText(seedTxt, side === 'a' ? x + pad : x + w - pad, cyMid);
   }
 }
 
@@ -2202,8 +2386,9 @@ async function buildBracketExportCanvas() {
     });
   }
 
+  const scale = 3;
   const cardH = 64, vsGapW = 38, gapY = 18, columnPad = 10, connStub = 10;
-  const marginX = 48, containerPad = 28, headerH = 54, topPad = 66, bottomPad = 48;
+  const marginX = 48, containerPad = 28, headerH = 54, topPad = 66;
 
   // Size the card to whatever the longest name/id in THIS tournament
   // actually needs, instead of a fixed width that clips real names with
@@ -2212,7 +2397,7 @@ async function buildBracketExportCanvas() {
   // string can't blow the canvas up without bound (falls back to the
   // existing ellipsis truncation only past that point).
   const neededTextW = measureExportSlotContentWidth(state.matches) + 4;
-  const neededHalfW = EXPORT_SLOT_PAD * 2 + EXPORT_AVATAR_R * 2 + EXPORT_NAME_GAP + neededTextW;
+  const neededHalfW = EXPORT_SLOT_PAD * 2 + EXPORT_AVATAR_R * 2 + EXPORT_NAME_GAP + neededTextW + 24;
   const halfW = Math.min(Math.max(neededHalfW, (280 - vsGapW) / 2), 400);
   const cardW = halfW * 2 + vsGapW;
   const columnW = cardW + columnPad * 2;
@@ -2227,29 +2412,16 @@ async function buildBracketExportCanvas() {
   const gridTop = containerTop + containerPad;
   const cardsTop = gridTop + headerH + 8;
   const containerBottom = cardsTop + contentH + containerPad;
-  const cssH = containerBottom + bottomPad;
-
-  // Aim for a crisp 4x export (up from the previous fixed 3x) but never
-  // exceed a canvas pixel size that some browsers (older/mobile Safari in
-  // particular) refuse to allocate or rasterize — that used to be a hidden
-  // cause of "export produces a blank/blurry image" on large brackets. If a
-  // huge bracket (many rounds/long names) would blow past that ceiling, we
-  // scale back down just enough to stay safely under it instead of failing.
-  const EXPORT_MAX_DIM = 8192;
-  const desiredScale = 4;
-  const scale = Math.max(1, Math.min(desiredScale, EXPORT_MAX_DIM / Math.max(cssW, cssH)));
+  // مساحة الفوتر: شريط البطل (لو البطولة خلصت) + سطر تاريخ التصدير
+  const finalR = Math.max(...state.matches.map(m => m.round));
+  const finalM = state.matches.find(m => m.round === finalR);
+  const championPlayer = (state.tournamentFinished && finalM) ? getPlayer(finalM.winnerId) : null;
+  const cssH = containerBottom + (championPlayer ? 96 : 44);
 
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(cssW * scale);
   canvas.height = Math.ceil(cssH * scale);
   const ctx = canvas.getContext('2d');
-  // Without this, browsers default to a lower-quality (sometimes literally
-  // "low") resampling filter when drawImage() has to upscale/downscale an
-  // avatar, logo, or background photo onto the canvas — this was the main
-  // source of blurry/pixelated images and logos in exports even though the
-  // bracket itself was drawn at high resolution.
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
   ctx.scale(scale, scale);
 
   await drawExportBackground(ctx, cssW, cssH, colors);
@@ -2439,6 +2611,35 @@ async function buildBracketExportCanvas() {
     ctx.restore();
   }
 
+  // شريط البطل + تاريخ التصدير في فوتر الصورة
+  {
+    let footY = containerBottom + 28;
+    if (championPlayer) {
+      ctx.font = "700 20px " + EXPORT_FONT_STACK;
+      const champText = '🏆 البطل: ' + championPlayer.name;
+      const tw = ctx.measureText(champText).width;
+      const bw = Math.min(tw + 60, cssW - marginX * 2);
+      roundRectPath(ctx, cssW / 2 - bw / 2, footY - 14, bw, 42, 21);
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.10)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#ffd700';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      drawBidiText(ctx, champText, cssW / 2, footY + 7, bw - 30);
+      footY += 52;
+    }
+    const now = new Date();
+    ctx.font = "400 11px " + EXPORT_FONT_STACK;
+    ctx.fillStyle = colors.textMuted;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.direction = 'ltr';
+    ctx.fillText('K-Gang Bracket · ' + now.toLocaleDateString('ar-EG') + ' ' + now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }), marginX, footY);
+  }
+
   return canvas;
 }
 
@@ -2480,7 +2681,7 @@ async function exportBracketAsPDF() {
       format: [canvas.width, canvas.height],
       hotfixes: ['px_scaling']
     });
-    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, canvas.width, canvas.height);
     pdf.save(exportFileBaseName() + '.pdf');
     toast('تم تصدير الجدول كملف PDF');
   } catch (e) {
@@ -2495,7 +2696,7 @@ async function exportBracketAsPDF() {
 // ========== UI ==========
 function updateStats() {
   $('#playerCount').textContent = state.players.length;
-  $('#matchCount').textContent = state.tournamentStarted ? state.matches.filter(m => m.round === 1).length : '—';
+  $('#matchCount').textContent = state.tournamentStarted ? state.matches.length : '—';
   const r = state.tournamentStarted ? [...new Set(state.matches.map(m => m.round))].length : 0;
   $('#roundCount').textContent = r || '—';
 }
